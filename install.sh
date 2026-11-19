@@ -38,7 +38,7 @@ if [ "$WITH_MEDIAPIPE" != "0" ]; then
 fi
 
 echo "==> Установка EyeTracker"
-"$VENV/bin/pip" install --no-deps "$SRC"
+"$VENV/bin/pip" install --no-deps --force-reinstall "$SRC"
 
 echo "==> Загрузка моделей"
 "$VENV/bin/python" -m eyetracker --download-models

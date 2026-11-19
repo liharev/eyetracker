@@ -54,6 +54,9 @@
 
 ## Установка (Radxa OS / Debian 12 / Ubuntu)
 
+> **Пошаговая инструкция** с проверкой камеры, настройкой почты, обновлением, удалением и решением
+> проблем — в [docs/INSTALL.md](docs/INSTALL.md).
+
 ```bash
 git clone <репозиторий> eyetracker && cd eyetracker
 ./install.sh                    # или WITH_MEDIAPIPE=0 ./install.sh
@@ -62,6 +65,8 @@ git clone <репозиторий> eyetracker && cd eyetracker
 Скрипт ставит системные пакеты (`python3-pyqt5`, проигрыватель звука, `v4l-utils`), создаёт venv
 в `~/.local/share/eyetracker/venv`, ставит OpenCV (headless) и MediaPipe, скачивает модели
 (YuNet, SFace, FaceLandmarker — с проверкой SHA-256) и добавляет пользователя в группу `video`.
+
+Обновление: `git pull && ./install.sh`; удаление: `./uninstall.sh` (с `--purge` — вместе с данными).
 
 Запуск: `~/.local/bin/eyetracker`. При первом запуске программа попросит **задать логин и пароль
 администратора** и откроет настройки. Автозапуск при входе в систему включён по умолчанию
@@ -72,9 +77,8 @@ git clone <репозиторий> eyetracker && cd eyetracker
 ## Первичная настройка
 
 1. **Камера** — выберите источник, убедитесь в наличии изображения. Для USB-камеры — `0` или
-   `/dev/videoN`. Для MIPI-камеры RK3588 можно указать конвейер GStreamer (нужна сборка OpenCV
-   с GStreamer, например системный `python3-opencv`), например:
-   `v4l2src device=/dev/video11 ! video/x-raw,format=NV12,width=640,height=480 ! videoconvert ! appsink drop=true max-buffers=1`
+   `/dev/videoN` (номер — из `v4l2-ctl --list-devices`). Рекомендуется USB-камера (UVC);
+   подключение MIPI-камеры RK3588 описано в [docs/INSTALL.md](docs/INSTALL.md#mipi-камера).
 2. **База лиц → Добавить лицо…** — снимите 10 образцов с камеры (слегка поворачивая голову) или
    загрузите фотографии. Правила 4, 5 и 6 работают только при непустой базе (защита от
    самоблокировки).
