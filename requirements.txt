@@ -1,0 +1,7 @@
+# Обязательные
+numpy>=1.21
+opencv-python-headless>=4.8   # YuNet 2023mar требует OpenCV >= 4.8; headless — без собственного Qt
+# Графический интерфейс: системный python3-pyqt5 (рекомендуется, apt) ИЛИ PySide6 (pip)
+# PySide6>=6.4
+# Необязательно: точная оценка взгляда по радужке (иначе — по повороту головы)
+# mediapipe>=0.10   # после установки см. install.sh: заменить opencv-contrib-python на headless
