@@ -90,16 +90,23 @@ class SettingsDialog(QtWidgets.QDialog):
             self.detect_width.addItem(f"{wv} px", wv)
         self.cpu_cores = QtWidgets.QLineEdit()
         self.nice = ispin(0, 19)
-        self.use_mp = QtWidgets.QCheckBox("Точная оценка взгляда по радужке (MediaPipe)")
+        self.use_mp = QtWidgets.QCheckBox("Точная оценка взгляда по радужке (модель точек лица)")
+        self.full_scan = dspin(0.2, 10, 0.1, 1, " с")
+        self.gaze_fps = dspin(0.5, 30, 0.5, 1, " раз/с")
         f.addRow("Частота анализа (есть люди):", self.fps)
         f.addRow("Частота анализа (никого нет):", self.idle_fps)
         f.addRow("Ширина кадра для детектора:", self.detect_width)
         f.addRow("Ядра CPU:", self.cpu_cores)
         f.addRow("Приоритет (nice):", self.nice)
+        f.addRow("Полный просмотр кадра каждые:", self.full_scan)
+        f.addRow("Оценка взгляда (без предупреждения):", self.gaze_fps)
         f.addRow(self.use_mp)
         f.addRow(hint("«auto» — только энергоэффективные ядра (на RK3588: A55, cpu0-3), производительные "
                       "ядра A76 остаются другим программам. Пусто — без ограничения. Ядра и приоритет "
-                      "применяются после перезапуска программы. Без MediaPipe взгляд оценивается только "
+                      "применяются после перезапуска программы. Между полными просмотрами кадра лицо ищется только возле "
+                      "уже найденных лиц (в 3 раза дешевле); новое лицо будет замечено не позже, чем через "
+                      "этот интервал. Пока рамки нет, взгляд оценивается реже; при появлении рамки — на "
+                      "каждом кадре, чтобы она сразу исчезала при возврате взгляда. Без точной оценки взгляд оценивается только "
                       "по повороту головы (ещё меньше нагрузка)."))
         v.addWidget(box)
 
@@ -451,7 +458,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.detect_width.setCurrentIndex(idx)
         self.cpu_cores.setText(p.cpu_cores)
         self.nice.setValue(p.nice)
-        self.use_mp.setChecked(p.use_mediapipe)
+        self.use_mp.setChecked(p.precise_gaze)
+        self.full_scan.setValue(p.full_scan_interval_s)
+        self.gaze_fps.setValue(p.gaze_fps)
         self.rec_thr.setValue(p.recognition_threshold)
         self.det_thr.setValue(p.detect_threshold)
         self.min_face.setValue(p.min_face_size)
@@ -532,7 +541,9 @@ class SettingsDialog(QtWidgets.QDialog):
         p.detect_width = int(self.detect_width.currentData())
         p.cpu_cores = self.cpu_cores.text().strip()
         p.nice = self.nice.value()
-        p.use_mediapipe = self.use_mp.isChecked()
+        p.precise_gaze = self.use_mp.isChecked()
+        p.full_scan_interval_s = self.full_scan.value()
+        p.gaze_fps = self.gaze_fps.value()
         p.recognition_threshold = self.rec_thr.value()
         p.detect_threshold = self.det_thr.value()
         p.min_face_size = self.min_face.value()

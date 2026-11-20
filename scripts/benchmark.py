@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Замер нагрузки движка на CPU/память без камеры (подставляется тестовое фото).
 
-    python3 scripts/benchmark.py [empty|person|gaze] [секунды]
+    python3 scripts/benchmark.py [empty|person|gaze] [секунды] [auto|litert|opencv]
 
 Нужны модели (python3 -m eyetracker --download-models) и тестовые фото (scripts/fetch_test_data.sh).
 """
@@ -42,6 +42,8 @@ def main():
     face = canvas(cv2.imread(str(ROOT / "tests" / "data" / "lena.jpg")))
     cfg = Config()
     cfg.gaze.enabled = mode == "gaze"
+    if len(sys.argv) > 3:
+        cfg.processing.gaze_backend = sys.argv[3]
     tmp = tempfile.mkdtemp()
     db = FaceDatabase(Path(tmp) / "faces")
     cams = []

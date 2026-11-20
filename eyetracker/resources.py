@@ -14,7 +14,7 @@ from typing import List, Optional, Set
 log = logging.getLogger(__name__)
 
 # Переменные окружения для библиотек, читающих их при импорте
-# (вызывать limit_threads_env() до импорта numpy / cv2 / mediapipe).
+# (вызывать limit_threads_env() до импорта numpy / cv2 / LiteRT).
 _THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
 
 

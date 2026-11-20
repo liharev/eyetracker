@@ -54,7 +54,10 @@ class ProcessingConfig:
     min_face_size: int = 48            # px; лица меньше — только «присутствие»
     recognition_threshold: float = 0.40  # косинусная близость SFace
     recognize_interval_s: float = 2.0  # повторное распознавание известных треков
-    use_mediapipe: bool = True         # точная оценка взгляда (радужка); False — только поворот головы
+    precise_gaze: bool = True          # точная оценка взгляда (радужка); False — только поворот головы
+    gaze_backend: str = "auto"         # auto | litert | opencv — чем выполнять модель точек лица
+    full_scan_interval_s: float = 1.0  # полный просмотр кадра; между ними — поиск возле известных лиц
+    gaze_fps: float = 2.5              # частота оценки взгляда, пока нет предупреждения (с рамкой — полная)
     # Ограничение ресурсов: ядра CPU ("auto" — энергоэффективные ядра, на RK3588 это A55 cpu0-3;
     # "" — без ограничений; либо список "0-3", "0,1") и приоритет процесса (nice 0..19).
     cpu_cores: str = "auto"
@@ -189,7 +192,13 @@ class Config:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Config":
         cfg = cls()
-        _merge(cfg, data or {})
+        data = dict(data or {})
+        proc = data.get("processing")
+        if isinstance(proc, dict) and "use_mediapipe" in proc and "precise_gaze" not in proc:
+            proc = dict(proc)  # настройки версии 1.0
+            proc["precise_gaze"] = proc.pop("use_mediapipe")
+            data["processing"] = proc
+        _merge(cfg, data)
         cfg.validate()
         return cfg
 
@@ -210,6 +219,10 @@ class Config:
         self.processing.idle_fps = min(self.processing.fps, max(0.2, float(self.processing.idle_fps)))
         self.processing.detect_width = max(160, int(self.processing.detect_width))
         self.processing.nice = min(19, max(0, int(self.processing.nice)))
+        self.processing.gaze_fps = min(30.0, max(0.5, float(self.processing.gaze_fps)))
+        self.processing.full_scan_interval_s = min(10.0, max(0.0, float(self.processing.full_scan_interval_s)))
+        if self.processing.gaze_backend not in ("auto", "litert", "opencv"):
+            self.processing.gaze_backend = "auto"
         self.camera.rotate = int(self.camera.rotate) if int(self.camera.rotate) in (0, 90, 180, 270) else 0
         if self.email.security not in ("starttls", "ssl", "none"):
             self.email.security = "starttls"

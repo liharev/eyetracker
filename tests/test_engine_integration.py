@@ -127,6 +127,8 @@ def test_engine_end_to_end(tmp_path):
         db.add_person("Лена", np.vstack([emb, emb]))
 
         assert wait(lambda: eng.status.authorized == ("Лена",)), eng.status
+        assert wait(lambda: eng.roi_scans > 5)        # между полными просмотрами — поиск в окрестности
+        assert eng.full_scans < eng.roi_scans
         assert wait(lambda: 3 in stages), (stages, eng.status)   # T3 → звук
         assert locker.calls == 0
 

@@ -40,6 +40,11 @@ def test_config_tolerates_garbage():
     assert "lock_stranger" in c.notify.routes
 
 
+def test_config_migrates_v1_keys():
+    c = Config.from_dict({"processing": {"use_mediapipe": False}})
+    assert c.processing.precise_gaze is False
+
+
 # ------------------------------------------------------------------- auth
 def test_auth_and_lockout():
     a = Config().auth

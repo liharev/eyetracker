@@ -89,6 +89,10 @@ class Engine:
         self.status = EngineStatus()
         self._target_on_screen: Optional[bool] = None
         self._locking = False
+        self._last_full_scan = -1e9
+        self._expected_faces = 0
+        self.full_scans = 0
+        self.roi_scans = 0
 
     # ------------------------------------------------------------ public API
     def start(self) -> None:
@@ -159,7 +163,7 @@ class Engine:
         p = self.cfg.processing
         self.detector = FaceDetector(paths["yunet"], p.detect_threshold, detect_width=p.detect_width)
         self.embedder = FaceEmbedder(paths["sface"])
-        # Оценщик взгляда (MediaPipe, ~50–100 МБ памяти) загружается лениво —
+        # Оценщик взгляда (модель точек лица) загружается лениво —
         # только когда контроль взгляда включён или открыта калибровка/просмотр.
         return True
 
@@ -168,8 +172,8 @@ class Engine:
         if self.gaze:
             self.gaze.close()
             self.gaze = None
-        lm = models.ensure("face_landmarker", self.allow_download) if p.use_mediapipe else None
-        self.gaze = GazeEstimator(lm, p.use_mediapipe, self.cfg.gaze.eye_gain)
+        lm = models.ensure("face_landmarker", self.allow_download) if p.precise_gaze else None
+        self.gaze = GazeEstimator(lm, p.precise_gaze, self.cfg.gaze.eye_gain, p.gaze_backend)
         self.status.gaze_method = self.gaze.method
 
     def _apply_pending_config(self) -> None:
@@ -188,7 +192,8 @@ class Engine:
             self.detector.set_threshold(new.processing.detect_threshold)
         if self.detector:
             self.detector.detect_width = new.processing.detect_width
-        if self.gaze and (new.processing.use_mediapipe != old.processing.use_mediapipe or not new.gaze.enabled):
+        if self.gaze and (new.processing.precise_gaze != old.processing.precise_gaze
+                          or new.processing.gaze_backend != old.processing.gaze_backend or not new.gaze.enabled):
             self.gaze.close()
             self.gaze = None
         if self.gaze:
@@ -280,7 +285,7 @@ class Engine:
     # ------------------------------------------------------------ per frame
     def _process_frame(self, frame: np.ndarray, now: float, paused: bool) -> None:
         cfg = self.cfg
-        dets = self.detector.detect(frame)
+        dets = self._detect(frame, now)
         tracks = self.tracker.update(dets, now)
         visible = FaceTracker.visible(tracks, now)
         db_empty = len(self.db) == 0
@@ -308,8 +313,13 @@ class Engine:
         zone = gaze_zone(cfg)
         if need_gaze and self.gaze is None:
             self._init_gaze()
+        # Пока предупреждения нет, взгляд достаточно оценивать 2–3 раза в секунду (таймеры T1–T3
+        # измеряются секундами); при активной рамке — на каждом кадре, чтобы она сразу исчезала.
+        gaze_period = 0.0 if (self._stage > GazeStage.NORMAL or self.calibration_mode or self.preview_enabled) \
+            else 1.0 / max(0.5, cfg.processing.gaze_fps)
         if target is not None and need_gaze:
-            if target.last_seen == now:
+            fresh = target.gaze_t > -1e8 and now - target.gaze_t < gaze_period - 1e-3
+            if target.last_seen == now and not fresh:
                 sample = self.gaze.estimate(frame, target.row)
                 target.gaze, target.gaze_t = sample, now
                 if sample is None:
@@ -359,6 +369,25 @@ class Engine:
             gaze=(sample.yaw, sample.pitch) if sample is not None else None,
             on_screen=on_screen, screen_locked=screen_locked, paused_until=self.pause_remaining(),
             db_size=len(self.db))
+
+    def _detect(self, frame: np.ndarray, now: float) -> np.ndarray:
+        """Полный просмотр кадра — периодически и когда лиц нет; в остальное время —
+        поиск только в окрестностях уже найденных лиц (в ~3 раза дешевле)."""
+        p = self.cfg.processing
+        known = [tr.row for tr in self.tracker.tracks if now - tr.last_seen <= 0.5]
+        full = (not known or now - self._last_full_scan >= p.full_scan_interval_s
+                or self.preview_enabled or self.calibration_mode)
+        if not full:
+            dets = self.detector.detect_rois(frame, known)
+            self.roi_scans += 1
+            if dets.shape[0] >= self._expected_faces:
+                return dets
+            # кто-то пропал или сместился за пределы окрестности — проверяем весь кадр сразу
+        dets = self.detector.detect(frame)
+        self.full_scans += 1
+        self._last_full_scan = now
+        self._expected_faces = dets.shape[0]
+        return dets
 
     # -------------------------------------------------------------- actions
     def _publish(self, category: str, etype: str, message: str, details: dict, frame: Optional[np.ndarray]) -> None:

@@ -1,15 +1,16 @@
 """Оценка направления взгляда.
 
-Основной метод — MediaPipe FaceLandmarker (478 точек, включая радужки):
-    направление взгляда = поворот головы (из матрицы трансформации лица)
+Основной метод — модель 478 точек лица (включая радужки) из face_landmarker.task,
+выполняемая напрямую, без MediaPipe (см. landmarks.py):
+    направление взгляда = поворот головы (совмещение с эталонной 3D-моделью лица)
                          + поворот глаз (положение радужки относительно уголков глаз).
-Резервный метод (если MediaPipe недоступен) — поворот головы по 5 точкам YuNet.
+Резервный метод — поворот головы по 5 точкам YuNet (почти без затрат CPU).
 
 Все углы — в градусах относительно линии «лицо → камера»:
     yaw   > 0 — взгляд смещён вправо по изображению камеры;
     pitch > 0 — взгляд выше камеры (экран находится НИЖЕ камеры, т.е. pitch < 0).
-Так как кадр для MediaPipe вырезается по центру лица, оценка почти не зависит
-от того, где человек находится в кадре.
+Вырезка лица выравнивается по линии глаз, а результат поворачивается обратно в
+систему координат кадра, поэтому наклон головы набок не искажает оценку.
 """
 from __future__ import annotations
 
@@ -19,7 +20,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
-import cv2
 import numpy as np
 
 log = logging.getLogger(__name__)
@@ -97,85 +97,56 @@ def head_pose_from_yunet(row: np.ndarray) -> Tuple[float, float]:
     return yaw, pitch
 
 
-class GazeEstimator:
-    def __init__(self, landmarker_model: Optional[Path], use_mediapipe: bool = True, eye_gain: float = 2.5):
-        self.eye_gain = eye_gain
-        self._landmarker = None
-        self.method = "head"
-        if use_mediapipe and landmarker_model:
-            try:
-                import mediapipe as mp  # noqa: F401
-                from mediapipe.tasks.python import BaseOptions, vision
+def unroll(yaw: float, pitch: float, roll: float) -> Tuple[float, float]:
+    """Переводит направление из выровненной по глазам вырезки в систему координат кадра."""
+    y, p = math.radians(yaw), math.radians(pitch)
+    d = np.array([math.sin(y) * math.cos(p), math.sin(p), math.cos(y) * math.cos(p)])
+    c, s = math.cos(roll), math.sin(roll)
+    d = np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]]) @ d
+    return math.degrees(math.atan2(d[0], d[2])), _asin_deg(d[1])
 
-                options = vision.FaceLandmarkerOptions(
-                    base_options=BaseOptions(model_asset_path=str(landmarker_model)),
-                    running_mode=vision.RunningMode.IMAGE,
-                    num_faces=1,
-                    min_face_detection_confidence=0.3,
-                    min_face_presence_confidence=0.3,
-                    output_face_blendshapes=False,
-                    output_facial_transformation_matrixes=True,
-                )
-                self._landmarker = vision.FaceLandmarker.create_from_options(options)
-                self._mp = mp
-                self.method = "mediapipe"
-                log.info("Оценка взгляда: MediaPipe FaceLandmarker (радужка + поворот головы)")
+
+class GazeEstimator:
+    """precise=True — модель точек лица (LiteRT или OpenCV DNN); иначе — поворот головы по YuNet."""
+
+    def __init__(self, landmarker_model: Optional[Path], precise: bool = True, eye_gain: float = 2.5,
+                 backend: str = "auto"):
+        self.eye_gain = eye_gain
+        self._landmarks = None
+        self.method = "head"
+        if precise and landmarker_model:
+            try:
+                from .landmarks import FaceLandmarks
+
+                self._landmarks = FaceLandmarks(landmarker_model, backend)
+                self.method = f"радужка/{self._landmarks.backend}"
+                log.info("Оценка взгляда: модель точек лица (%s, 1 поток), радужка + поворот головы",
+                         self._landmarks.backend)
             except Exception as exc:  # noqa: BLE001
-                log.warning("MediaPipe недоступен (%s) — используется оценка по повороту головы", exc)
-                self._landmarker = None
-        if self._landmarker is None:
+                log.warning("Модель точек лица недоступна (%s) — оценка по повороту головы", exc)
+                self._landmarks = None
+        if self._landmarks is None:
             log.info("Оценка взгляда: поворот головы по 5 точкам YuNet")
 
     def close(self) -> None:
-        if self._landmarker is not None:
-            try:
-                self._landmarker.close()
-            except Exception:  # noqa: BLE001
-                pass
-            self._landmarker = None
+        self._landmarks = None
 
-    # ------------------------------------------------------------------
     def estimate(self, frame: np.ndarray, row: np.ndarray) -> Optional[GazeSample]:
-        if self._landmarker is not None:
-            sample = self._estimate_mediapipe(frame, row)
-            if sample is not None:
-                return sample
-            return None  # лицо найдено детектором, но ориентиры нет — сильный поворот
-        yaw, pitch = head_pose_from_yunet(row)
-        return GazeSample(yaw, pitch, yaw, pitch, method="head")
+        if self._landmarks is None:
+            yaw, pitch = head_pose_from_yunet(row)
+            return GazeSample(yaw, pitch, yaw, pitch, method="head")
+        res = self._landmarks.detect(frame, row)
+        if res is None:
+            return None  # лицо найдено детектором, но точки — нет: сильный поворот
+        pts, rot, roll = res
+        from .landmarks import head_angles
 
-    @staticmethod
-    def _square_crop(frame: np.ndarray, row: np.ndarray, scale: float = 1.8, out: int = 256) -> np.ndarray:
-        x, y, w, h = [float(v) for v in row[:4]]
-        cx, cy = x + w / 2, y + h / 2
-        side = max(w, h) * scale
-        x0, y0 = int(round(cx - side / 2)), int(round(cy - side / 2))
-        x1, y1 = int(round(cx + side / 2)), int(round(cy + side / 2))
-        H, W = frame.shape[:2]
-        pad = [max(0, -y0), max(0, y1 - H), max(0, -x0), max(0, x1 - W)]
-        crop = frame[max(0, y0):min(H, y1), max(0, x0):min(W, x1)]
-        if any(pad):
-            crop = cv2.copyMakeBorder(crop, pad[0], pad[1], pad[2], pad[3], cv2.BORDER_CONSTANT, value=0)
-        if crop.size == 0:
-            return crop
-        return cv2.resize(crop, (out, out), interpolation=cv2.INTER_AREA if crop.shape[0] > out else cv2.INTER_LINEAR)
-
-    def _estimate_mediapipe(self, frame: np.ndarray, row: np.ndarray) -> Optional[GazeSample]:
-        crop = self._square_crop(frame, row)
-        if crop.size == 0:
-            return None
-        rgb = np.ascontiguousarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-        result = self._landmarker.detect(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb))
-        if not result.face_landmarks:
-            return None
-        pts = np.array([(p.x, p.y) for p in result.face_landmarks[0]], dtype=np.float64)
-        if result.facial_transformation_matrixes:
-            R = np.asarray(result.facial_transformation_matrixes[0], dtype=np.float64)[:3, :3]
-            head_yaw = math.degrees(math.atan2(R[0, 2], R[2, 2]))
-            head_pitch = _asin_deg(R[1, 2])
-        else:
-            head_yaw = head_pitch = 0.0
-        return self.compose(pts, head_yaw, head_pitch, self.eye_gain)
+        head_yaw, head_pitch = head_angles(rot)
+        s = self.compose(pts[:, :2].astype(np.float64), head_yaw, head_pitch, self.eye_gain)
+        s.yaw, s.pitch = unroll(s.yaw, s.pitch, roll)
+        s.head_yaw, s.head_pitch = unroll(s.head_yaw, s.head_pitch, roll)
+        s.method = self.method
+        return s
 
     @staticmethod
     def eye_metrics(pts: np.ndarray, idx) -> Tuple[float, float, float, float]:
@@ -197,7 +168,7 @@ class GazeEstimator:
         hb, vb, ear_b, wb = cls.eye_metrics(pts, _EYE_B)
         total_w = wa + wb
         if total_w <= 0:
-            return GazeSample(head_yaw, head_pitch, head_yaw, head_pitch, method="mediapipe")
+            return GazeSample(head_yaw, head_pitch, head_yaw, head_pitch, method="landmarks")
         # при повороте головы ближний к камере глаз виден лучше — даём ему больший вес
         horiz = (ha * wa + hb * wb) / total_w
         vert = (va * wa + vb * wb) / total_w
@@ -216,5 +187,5 @@ class GazeEstimator:
             eye_yaw=eye_yaw,
             eye_pitch=eye_pitch,
             eyes_closed=closed,
-            method="mediapipe",
+            method="landmarks",
         )

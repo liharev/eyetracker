@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Установка EyeTracker для текущего пользователя (Radxa OS / Debian / Ubuntu, aarch64 и x86_64).
 #
-#   ./install.sh                 — полная установка (с MediaPipe для точной оценки взгляда)
-#   WITH_MEDIAPIPE=0 ./install.sh — без MediaPipe (меньше памяти, взгляд — по повороту головы)
+#   ./install.sh               — полная установка (LiteRT для быстрой оценки взгляда по радужке)
+#   WITH_LITERT=0 ./install.sh — без LiteRT: модель точек лица выполняется через OpenCV
+#                                (чуть больше нагрузка в режиме контроля взгляда)
 #
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 APP_HOME="${APP_HOME:-$HOME/.local/share/eyetracker}"
 VENV="$APP_HOME/venv"
-WITH_MEDIAPIPE="${WITH_MEDIAPIPE:-1}"
+WITH_LITERT="${WITH_LITERT:-${WITH_MEDIAPIPE:-1}}"
 
 echo "==> Системные пакеты (нужен sudo)"
-PKGS="python3 python3-venv python3-pip python3-pyqt5 libegl1 libgles2 libgl1 \
+PKGS="python3 python3-venv python3-pip python3-pyqt5 \
       pulseaudio-utils alsa-utils v4l-utils libxcb-cursor0"
 # shellcheck disable=SC2086
 sudo apt-get update && sudo apt-get install -y --no-install-recommends $PKGS || {
@@ -25,16 +26,20 @@ python3 -m venv --system-site-packages "$VENV"
 "$VENV/bin/pip" install --upgrade pip wheel
 "$VENV/bin/pip" install "opencv-python-headless>=4.8" "numpy>=1.21"
 
-if [ "$WITH_MEDIAPIPE" != "0" ]; then
-    echo "==> MediaPipe (оценка взгляда по радужке)"
-    if "$VENV/bin/pip" install "mediapipe>=0.10"; then
-        # mediapipe тянет opencv-contrib-python со встроенным Qt, конфликтующим с PyQt5 —
-        # оставляем только headless-сборку OpenCV
-        "$VENV/bin/pip" uninstall -y opencv-contrib-python opencv-python >/dev/null 2>&1 || true
-        "$VENV/bin/pip" install --force-reinstall --no-deps "opencv-python-headless>=4.8"
-    else
-        echo "!! MediaPipe недоступен для этой платформы — взгляд будет оцениваться по повороту головы"
-    fi
+# MediaPipe версии 1.0 больше не нужен — удаляем при обновлении (экономия ~75 МБ памяти)
+if "$VENV/bin/pip" show mediapipe >/dev/null 2>&1; then
+    echo "==> Удаление MediaPipe (заменён прямым запуском модели точек лица)"
+    # вместе с зависимостями, которые были нужны только ему
+    "$VENV/bin/pip" uninstall -y mediapipe opencv-contrib-python opencv-python matplotlib contourpy cycler \
+        fonttools kiwisolver pyparsing pillow python-dateutil sounddevice cffi pycparser absl-py \
+        >/dev/null 2>&1 || true
+    "$VENV/bin/pip" install --force-reinstall --no-deps "opencv-python-headless>=4.8"
+fi
+
+if [ "$WITH_LITERT" != "0" ]; then
+    echo "==> LiteRT (быстрое выполнение модели точек лица для оценки взгляда)"
+    "$VENV/bin/pip" install ai-edge-litert || \
+        echo "!! LiteRT недоступен для этой платформы — модель будет выполняться через OpenCV"
 fi
 
 echo "==> Установка EyeTracker"

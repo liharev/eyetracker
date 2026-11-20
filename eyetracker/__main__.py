@@ -10,7 +10,7 @@ import sys
 
 from .resources import limit_threads_env
 
-limit_threads_env(1)  # до импорта numpy/cv2/mediapipe
+limit_threads_env(1)  # до импорта numpy/cv2/LiteRT
 
 from . import APP_NAME, __version__, paths  # noqa: E402
 
@@ -60,11 +60,15 @@ def cmd_check() -> int:
         print(f"OpenCV {cv2.__version__}: YuNet={'да' if hasattr(cv2, 'FaceDetectorYN') else 'НЕТ'}")
     except ImportError:
         print("OpenCV: НЕ УСТАНОВЛЕН")
+    import importlib.util
+    from importlib.metadata import PackageNotFoundError, version
+
     try:
-        import mediapipe
-        print(f"MediaPipe {mediapipe.__version__}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"MediaPipe: нет ({exc}) — взгляд будет оцениваться по повороту головы")
+        if importlib.util.find_spec("ai_edge_litert") is None:
+            raise PackageNotFoundError
+        print(f"LiteRT {version('ai-edge-litert')}: модель точек лица выполняется через LiteRT (быстрее)")
+    except (PackageNotFoundError, ValueError):
+        print("LiteRT: нет — модель точек лица будет выполняться через OpenCV DNN (медленнее, но работает)")
     try:
         from .qt import QT_API
         print(f"Qt: {QT_API}")
