@@ -11,12 +11,21 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional
 
 WHITE = "#FDFCFD"
+BLACK = "#000000"         # вариант для светлой темы оформления
 CYAN = "#01F5E4"
 GAP_DEG = 32.0
 _SRC = 1254.0
 R_OUT, R_IN, R_DOT = 457.2 / _SRC, 278.1 / _SRC, 173.3 / _SRC   # доли стороны полотна
 TRAY_SCALE = 0.49 / R_OUT       # значок в трее занимает почти всё полотно (мелкий размер)
 APP_ICON_ID = "camai-vigilance"
+
+
+def icon_id(black: bool = False) -> str:
+    return APP_ICON_ID + ("-black" if black else "")
+
+
+def ring_color(black: bool = False) -> str:
+    return BLACK if black else WHITE
 
 
 def svg(size: int = 1024, ring: str = WHITE, dot: str = CYAN, scale: float = 1.0) -> str:
@@ -88,13 +97,13 @@ def render(size: int, ring: str = WHITE, dot: Optional[str] = CYAN, scale: float
     return img
 
 
-def app_icon():
-    """Цветной значок программы (окна, меню)."""
+def app_icon(black: bool = False):
+    """Цветной значок программы (окна, меню); black — чёрная «C» для светлой темы."""
     from .qt import QtGui
 
     icon = QtGui.QIcon()
     for s in (16, 22, 24, 32, 48, 64, 128, 256):
-        icon.addPixmap(QtGui.QPixmap.fromImage(render(s)))
+        icon.addPixmap(QtGui.QPixmap.fromImage(render(s, ring_color(black))))
     return icon
 
 
@@ -109,15 +118,18 @@ def tray_icon(color: str, dot_mode: str = "filled"):
 
 
 def install_desktop_icons(base: Path, sizes: Iterable[int] = (16, 22, 24, 32, 48, 64, 128, 256)) -> Dict[str, Path]:
-    """Значки для ярлыков: base/hicolor/<N>x<N>/apps/*.png и scalable/apps/*.svg."""
+    """Значки для ярлыков в двух вариантах (белая и чёрная «C»):
+    base/hicolor/<N>x<N>/apps/*.png и base/hicolor/scalable/apps/*.svg."""
     out = {}
-    svg_path = base / "hicolor" / "scalable" / "apps" / f"{APP_ICON_ID}.svg"
-    svg_path.parent.mkdir(parents=True, exist_ok=True)
-    svg_path.write_text(svg(), encoding="utf-8")
-    out["svg"] = svg_path
-    for s in sizes:
-        p = base / "hicolor" / f"{s}x{s}" / "apps" / f"{APP_ICON_ID}.png"
-        p.parent.mkdir(parents=True, exist_ok=True)
-        render(s).save(str(p))
-        out[str(s)] = p
+    for black in (False, True):
+        name, ring = icon_id(black), ring_color(black)
+        svg_path = base / "hicolor" / "scalable" / "apps" / f"{name}.svg"
+        svg_path.parent.mkdir(parents=True, exist_ok=True)
+        svg_path.write_text(svg(ring=ring), encoding="utf-8")
+        out[f"{name}.svg"] = svg_path
+        for s in sizes:
+            p = base / "hicolor" / f"{s}x{s}" / "apps" / f"{name}.png"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            render(s, ring).save(str(p))
+            out[f"{name}-{s}"] = p
     return out

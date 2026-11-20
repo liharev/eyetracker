@@ -94,12 +94,12 @@ class SettingsDialog(QtWidgets.QDialog):
         for key, title in (("system", tr("Как в системе")), ("ru", "Русский"), ("en", "English")):
             self.language.addItem(title, key)
         self.tray_color = QtWidgets.QComboBox()
-        for key, title in (("auto", tr("Автоматически (по теме оформления)")), ("light", tr("Светлый")),
-                           ("dark", tr("Тёмный"))):
+        for key, title in (("auto", tr("Автоматически (по теме оформления)")),
+                           ("light", tr("Белые (для тёмной темы)")), ("dark", tr("Чёрные (для светлой темы)"))):
             self.tray_color.addItem(title, key)
         self.autostart = QtWidgets.QCheckBox(tr("Запускать автоматически при входе в систему"))
         f.addRow(tr("Язык интерфейса:"), self.language)
-        f.addRow(tr("Значок в трее:"), self.tray_color)
+        f.addRow(tr("Цвет значков (меню, трей):"), self.tray_color)
         f.addRow(self.autostart)
         v.addWidget(box)
 

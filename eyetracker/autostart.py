@@ -47,14 +47,14 @@ def menu_file() -> Path:
     return _data_home() / "applications" / MENU_FILE
 
 
-def icon_path() -> Path:
-    return icons_base() / "hicolor" / "scalable" / "apps" / f"{icons.APP_ICON_ID}.svg"
+def icon_path(black: bool = False) -> Path:
+    return icons_base() / "hicolor" / "scalable" / "apps" / f"{icons.icon_id(black)}.svg"
 
 
-def icon_ref() -> str:
+def icon_ref(black: bool = False) -> str:
     """Полный путь к значку (меню не зависит от кэша темы значков) или имя значка."""
-    p = icon_path()
-    return str(p) if p.exists() else icons.APP_ICON_ID
+    p = icon_path(black)
+    return str(p) if p.exists() else icons.icon_id(black)
 
 
 def exec_line(*args: str) -> str:
@@ -72,25 +72,26 @@ def _write_if_changed(path: Path, content: str) -> bool:
 def ensure_icons() -> bool:
     """Значки в ~/.local/share/icons; True — если что-то было (пере)записано. Нужен QGuiApplication."""
     sizes = (16, 22, 24, 32, 48, 64, 128, 256)
-    svg_ok = icon_path().exists() and icon_path().read_text(encoding="utf-8", errors="replace") == icons.svg()
-    pngs_ok = all((icons_base() / "hicolor" / f"{s}x{s}" / "apps" / f"{icons.APP_ICON_ID}.png").exists()
-                  for s in sizes)
+    svg_ok = all(icon_path(b).exists() and icon_path(b).read_text(encoding="utf-8", errors="replace")
+                 == icons.svg(ring=icons.ring_color(b)) for b in (False, True))
+    pngs_ok = all((icons_base() / "hicolor" / f"{s}x{s}" / "apps" / f"{icons.icon_id(b)}.png").exists()
+                  for s in sizes for b in (False, True))
     if svg_ok and pngs_ok:
         return False
     icons.install_desktop_icons(icons_base(), sizes)
     return True
 
 
-def ensure_menu_entry() -> bool:
-    content = MENU.format(exec=exec_line("--settings"), icon=icon_ref(),
+def ensure_menu_entry(black: bool = False) -> bool:
+    content = MENU.format(exec=exec_line("--settings"), icon=icon_ref(black),
                           suffix_en=" — settings", suffix_ru=" — настройки")
     return _write_if_changed(menu_file(), content)
 
 
-def set_enabled(enabled: bool) -> None:
+def set_enabled(enabled: bool, black: bool = False) -> None:
     path = paths.autostart_file()
     if enabled:
-        _write_if_changed(path, AUTOSTART.format(exec=exec_line(), icon=icon_ref(), suffix_en="", suffix_ru=""))
+        _write_if_changed(path, AUTOSTART.format(exec=exec_line(), icon=icon_ref(black), suffix_en="", suffix_ru=""))
     elif path.exists():
         path.unlink()
 
@@ -130,8 +131,9 @@ def refresh_caches(icons_changed: bool, wait: bool = False) -> None:
         threading.Thread(target=run, name="desktop-cache", daemon=True).start()
 
 
-def ensure_desktop_integration(autostart: bool, wait: bool = False) -> bool:
-    """Значки, пункт меню и автозапуск в актуальном состоянии; True — если что-то обновлено."""
+def ensure_desktop_integration(autostart: bool, black: bool = False, wait: bool = False) -> bool:
+    """Значки, пункт меню и автозапуск в актуальном состоянии; True — если что-то обновлено.
+    black — чёрный вариант значка (для светлой темы оформления)."""
     changed_icons = False
     try:
         changed_icons = ensure_icons()
@@ -139,8 +141,8 @@ def ensure_desktop_integration(autostart: bool, wait: bool = False) -> bool:
         log.warning("Не удалось установить значки: %s", exc)
     changed_menu = False
     try:
-        changed_menu = ensure_menu_entry()
-        set_enabled(autostart)
+        changed_menu = ensure_menu_entry(black)
+        set_enabled(autostart, black)
     except OSError as exc:
         log.warning("Не удалось обновить пункт меню/автозапуск: %s", exc)
     if changed_icons or changed_menu:

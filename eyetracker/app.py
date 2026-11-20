@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Optional
 
-from . import APP_ID, auth, autostart, i18n, icons, paths
+from . import APP_ID, auth, autostart, i18n, icons, paths, theme
 from . import sound as sound_mod
 from .config import Config, ConfigStore
 from .engine import Engine, EngineStatus
@@ -63,6 +63,7 @@ class TrayApp(QtCore.QObject):
         self._last_icon_key = None
 
         self._icons = {}
+        self._black = self._use_black_icons()
         self._build_tray_icons()
         self._blink_on = True
         self._blink = QtCore.QTimer(self)
@@ -89,7 +90,15 @@ class TrayApp(QtCore.QObject):
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
         # пункт меню, значки и автозапуск — в актуальном состоянии (в т.ч. после обновления программы)
-        autostart.ensure_desktop_integration(self.cfg.general.autostart)
+        autostart.ensure_desktop_integration(self.cfg.general.autostart, self._black)
+        self.qapp.setWindowIcon(icons.app_icon(self._black))
+        # смена темы оформления «на лету»: сигнал Qt + редкая проверка настроек рабочего стола
+        sig = getattr(self.qapp, "paletteChanged", None)
+        if sig is not None:
+            sig.connect(lambda *_: QtCore.QTimer.singleShot(500, self._apply_icon_theme))
+        self._theme_timer = QtCore.QTimer(self)
+        self._theme_timer.timeout.connect(self._apply_icon_theme)
+        self._theme_timer.start(5000)
         self.engine.start()
         self.scheduler.start()
         self._daily()
@@ -123,8 +132,7 @@ class TrayApp(QtCore.QObject):
             self._build_menu()
             self._last_icon_key = None
         if old.general.tray_icon_color != self.cfg.general.tray_icon_color:
-            self._build_tray_icons()
-            self._last_icon_key = None
+            self._apply_icon_theme(force=True)
         self.engine.apply_config(self.cfg)
         self.dispatcher.set_config(self.cfg)
         self.mailer.set_config(self.cfg.email)
@@ -133,7 +141,7 @@ class TrayApp(QtCore.QObject):
         g = self.cfg.gaze
         self.overlay.configure(g.border_width, g.border_color, g.blink_interval_ms)
         try:
-            autostart.set_enabled(self.cfg.general.autostart)
+            autostart.set_enabled(self.cfg.general.autostart, self._black)
         except OSError as exc:
             log.warning("Автозапуск: %s", exc)
         self.publish_system("settings_changed", tr("Настройки изменены администратором"))
@@ -143,17 +151,26 @@ class TrayApp(QtCore.QObject):
         self.dispatcher.publish(Event("system", etype, message, details or {}))
 
     # ----------------------------------------------------------------- tray
-    def _tray_color(self) -> str:
-        mode = self.cfg.general.tray_icon_color
-        if mode == "light":
-            return "#fcfcfc"
-        if mode == "dark":
-            return "#232629"
-        return self.qapp.palette().color(QtGui.QPalette.ColorRole.WindowText).name()
+    def _use_black_icons(self) -> bool:
+        """Чёрная «C» — для светлой темы оформления (или по выбору в настройках)."""
+        palette_light = self.qapp.palette().color(QtGui.QPalette.ColorRole.Window).lightness() >= 128
+        return theme.use_black_icons(self.cfg.general.tray_icon_color, palette_light)
+
+    def _apply_icon_theme(self, force: bool = False) -> None:
+        black = self._use_black_icons()
+        if black == self._black and not force:
+            return
+        self._black = black
+        log.info("Значки: %s вариант", "чёрный" if black else "белый")
+        self._build_tray_icons()
+        self._last_icon_key = None
+        self._on_status(self.engine.status)
+        self.qapp.setWindowIcon(icons.app_icon(black))
+        autostart.ensure_desktop_integration(self.cfg.general.autostart, black)
 
     def _build_tray_icons(self) -> None:
         """Монохромный логотип; состояние — видом центральной точки."""
-        color = self._tray_color()
+        color = icons.ring_color(self._black)
         filled, hollow = icons.tray_icon(color, "filled"), icons.tray_icon(color, "hollow")
         self._icons = {
             "ok": filled,                                   # авторизованный пользователь у экрана
@@ -385,7 +402,7 @@ def run(allow_download: bool = True, open_settings: bool = False) -> int:
     qapp = QtWidgets.QApplication.instance() or QtWidgets.QApplication([app_name()])
     qapp.setApplicationName(APP_ID)
     qapp.setQuitOnLastWindowClosed(False)
-    qapp.setWindowIcon(icons.app_icon())
+    qapp.setWindowIcon(icons.app_icon(theme.use_black_icons(cfg.general.tray_icon_color)))
     if hasattr(qapp, "setDesktopFileName"):
         qapp.setDesktopFileName(autostart.MENU_FILE[:-len(".desktop")])  # связь окон с пунктом меню
     set_language(qapp, cfg.general.language)

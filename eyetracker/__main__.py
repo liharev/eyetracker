@@ -97,14 +97,16 @@ def cmd_check() -> int:
 def cmd_install_icons() -> int:
     """Значки, пункт меню приложений и автозапуск; обновление кэшей меню и значков."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from . import autostart
+    from . import autostart, theme
     from .config import ConfigStore
     from .qt import QtGui
 
     app = QtGui.QGuiApplication([sys.argv[0]])  # нужен для отрисовки значков
-    autostart.ensure_desktop_integration(ConfigStore().load().general.autostart, wait=True)
+    general = ConfigStore().load().general
+    black = theme.use_black_icons(general.tray_icon_color)
+    autostart.ensure_desktop_integration(general.autostart, black, wait=True)
     print(autostart.menu_file())
-    print(autostart.icon_path())
+    print(autostart.icon_path(black))
     del app
     return 0
 

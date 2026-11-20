@@ -37,7 +37,7 @@ class GeneralConfig:
     autostart: bool = True
     log_retention_days: int = 90
     language: str = "system"           # system | ru | en
-    tray_icon_color: str = "auto"      # auto | light | dark — монохромный значок в трее
+    tray_icon_color: str = "auto"      # auto | light (белые значки) | dark (чёрные) — меню и трей
 
 
 @dataclass
