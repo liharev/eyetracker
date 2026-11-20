@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from . import paths
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -100,11 +101,11 @@ def download(key: str, target_dir: Optional[Path] = None, timeout: float = 60.0)
         with os.fdopen(fd, "wb") as out, urllib.request.urlopen(spec.url, timeout=timeout) as resp:
             shutil.copyfileobj(resp, out)
         if tmp.stat().st_size < 1024:
-            raise IOError(f"Получен слишком маленький файл для {spec.filename} — проверьте доступ к сети")
+            raise IOError(tr("Получен слишком маленький файл для {name} — проверьте доступ к сети", name=spec.filename))
         if spec.sha256:
             digest = _sha256(tmp)
             if digest != spec.sha256:
-                raise IOError(f"Контрольная сумма {spec.filename} не совпадает ({digest})")
+                raise IOError(tr("Контрольная сумма {name} не совпадает ({digest})", name=spec.filename, digest=digest))
         os.replace(tmp, target)
     finally:
         if tmp.exists():

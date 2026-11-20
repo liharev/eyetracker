@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Удаление EyeTracker текущего пользователя.
+# Удаление CAMAI бдительность (CAMAI vigilance) текущего пользователя.
 #   ./uninstall.sh          — удалить программу, сохранив настройки, базу лиц и журнал
 #   ./uninstall.sh --purge  — удалить всё, включая настройки, базу лиц, журнал и снимки
 set -euo pipefail
@@ -9,6 +9,7 @@ pkill -f "python.* -m eyetracker" 2>/dev/null && echo "Запущенный эк
 rm -f "$HOME/.local/bin/eyetracker" \
       "$HOME/.local/share/applications/eyetracker-settings.desktop" \
       "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/eyetracker.desktop"
+find "$HOME/.local/share/icons/hicolor" -name "camai-vigilance.*" -delete 2>/dev/null || true
 rm -rf "$APP_HOME/venv" "$APP_HOME/models" "$APP_HOME/lib"
 if [ "${1:-}" = "--purge" ]; then
     rm -rf "$APP_HOME" "${XDG_CONFIG_HOME:-$HOME/.config}/eyetracker"

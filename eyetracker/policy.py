@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Dict, List, Optional, Set
 
-from .config import Config
+from .config import Config, gaze_email_enabled
+from .i18n import tr
 
 AUTHORIZED = "authorized"
 UNKNOWN = "unknown"
@@ -19,17 +20,21 @@ PENDING = "pending"
 
 class GazeStage(IntEnum):
     NORMAL = 0   # взгляд на экране / контроль не активен
-    RED = 1      # T1: красная рамка
-    BLINK = 2    # T2: красная мигающая рамка
-    SOUND = 3    # T3: мигающая рамка + звуковой сигнал
+    RED = 1      # красная рамка
+    BLINK = 2    # красная мигающая рамка
+    SOUND = 3    # мигающая рамка + звуковой сигнал
 
 
-GAZE_STAGE_TEXT = {
+_STAGE_TEXT = {
     GazeStage.NORMAL: "норма",
     GazeStage.RED: "красная рамка",
     GazeStage.BLINK: "мигающая рамка",
     GazeStage.SOUND: "звуковой сигнал",
 }
+
+
+def stage_text(stage) -> str:
+    return tr(_STAGE_TEXT[GazeStage(stage)])
 
 
 @dataclass
@@ -69,11 +74,15 @@ class PolicyResult:
 
 
 LOCK_PRIORITY = ("lock_stranger", "lock_unauthorized", "lock_absence")
-LOCK_TEXT = {
+_LOCK_TEXT = {
     "lock_absence": "Экран заблокирован: перед экраном никого нет",
     "lock_unauthorized": "Экран заблокирован: перед экраном нет авторизованного лица",
     "lock_stranger": "Экран заблокирован: обнаружено постороннее лицо",
 }
+
+
+def lock_text(key: str) -> str:
+    return tr(_LOCK_TEXT[key])
 
 
 class Policy:
@@ -101,6 +110,7 @@ class Policy:
         self._return_since: Optional[float] = None
         self._stage = GazeStage.NORMAL
         self._authorized_seen = False
+        self._email_sent = False
 
     def set_config(self, cfg: Config) -> None:
         self.cfg = cfg
@@ -133,11 +143,11 @@ class Policy:
                 self._present = True
                 res.events.append(PolicyEvent(
                     "presence", "person_appeared",
-                    f"Перед экраном появился человек (лиц в кадре: {len(faces)})",
+                    tr("Перед экраном появился человек (лиц в кадре: {n})", n=len(faces)),
                     {"faces": len(faces)}))
         elif self._present and t - self._last_face_t >= self.cfg.presence.leave_debounce_s:
             self._present = False
-            res.events.append(PolicyEvent("presence", "person_left", "Перед экраном никого нет", {}))
+            res.events.append(PolicyEvent("presence", "person_left", tr("Перед экраном никого нет"), {}))
 
     # ---------------------------------------------------------------- п.2
     def _recognition(self, t, faces, authorized, unknown, res: PolicyResult) -> None:
@@ -149,7 +159,7 @@ class Policy:
                 self._announced_persons.add(pid)
                 res.events.append(PolicyEvent(
                     "recognition", "authorized_recognized",
-                    f"Распознано авторизованное лицо: {f.name} (сходство {f.score:.2f})",
+                    tr("Распознано авторизованное лицо: {name} (сходство {score:.2f})", name=f.name, score=f.score),
                     {"person_id": f.person_id, "name": f.name, "score": round(f.score, 3)}))
             self._person_last_seen[pid] = t
         for f in unknown:
@@ -157,7 +167,7 @@ class Policy:
                 self._announced_unknown.add(f.track_id)
                 res.events.append(PolicyEvent(
                     "recognition", "unknown_face",
-                    f"Обнаружено неизвестное лицо (макс. сходство с базой {f.score:.2f})",
+                    tr("Обнаружено неизвестное лицо (макс. сходство с базой {score:.2f})", score=f.score),
                     {"track_id": f.track_id, "score": round(f.score, 3)}))
         live_ids = {f.track_id for f in faces}
         self._announced_unknown &= live_ids | {f.track_id for f in unknown}
@@ -214,7 +224,7 @@ class Policy:
                     details = {"faces": len(faces)}
                     if key == "lock_stranger":
                         details["unknown_faces"] = len(self._unknown_since)
-                    res.events.append(PolicyEvent(key, "screen_locked", LOCK_TEXT[key], details))
+                    res.events.append(PolicyEvent(key, "screen_locked", lock_text(key), details))
 
     # ---------------------------------------------------------------- п.6
     def _gaze(self, t: float, obs: Observation, has_authorized: bool, res: PolicyResult) -> None:
@@ -263,24 +273,32 @@ class Policy:
                 st = GazeStage(s)
                 res.events.append(PolicyEvent(
                     "gaze", f"gaze_stage_{st.name.lower()}",
-                    f"Взгляд не на экране {away_s:.1f} с — {GAZE_STAGE_TEXT[st]}",
+                    tr("Взгляд не на экране {sec:.1f} с — {stage}", sec=away_s, stage=stage_text(st)),
                     {"stage": int(st), "away_s": round(away_s, 1)}))
             self._stage = stage
         res.gaze_stage = self._stage
+        # уведомление на e-mail — если отправка событий контроля взгляда на почту включена
+        if not self._email_sent and gaze_email_enabled(self.cfg) and away_s >= g.t4_s:
+            self._email_sent = True
+            res.events.append(PolicyEvent(
+                "gaze", "gaze_email",
+                tr("Взгляд авторизованного пользователя не на экране дольше {sec:.0f} с", sec=away_s),
+                {"away_s": round(away_s, 1)}))
 
     def _reset_gaze(self, t: float, res: PolicyResult, reason: str = "returned") -> None:
         if self._stage > GazeStage.NORMAL and reason != "disabled":
             away_s = t - self._away_since if self._away_since is not None else 0.0
             text = {
-                "returned": "Взгляд вернулся на экран",
-                "locked": "Экран заблокирован — предупреждения о взгляде сняты",
-                "no_target": "Авторизованное лицо вне кадра — предупреждения о взгляде сняты",
+                "returned": tr("Взгляд вернулся на экран"),
+                "locked": tr("Экран заблокирован — предупреждения о взгляде сняты"),
+                "no_target": tr("Авторизованное лицо вне кадра — предупреждения о взгляде сняты"),
             }[reason]
             res.events.append(PolicyEvent(
                 "gaze", "gaze_returned" if reason == "returned" else "gaze_reset",
-                f"{text} (взгляд отсутствовал {away_s:.1f} с)",
+                tr("{text} (взгляд отсутствовал {sec:.1f} с)", text=text, sec=away_s),
                 {"away_s": round(away_s, 1), "reason": reason}))
         self._stage = GazeStage.NORMAL
         self._away_since = None
         self._return_since = None
+        self._email_sent = False
         res.gaze_stage = GazeStage.NORMAL

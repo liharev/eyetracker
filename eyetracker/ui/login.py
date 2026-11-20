@@ -5,6 +5,7 @@ from typing import Optional
 
 from .. import auth
 from ..config import AuthConfig
+from ..i18n import app_name, tr
 from ..qt import Qt, QtWidgets, exec_
 
 
@@ -14,7 +15,7 @@ class LoginDialog(QtWidgets.QDialog):
         self.auth_cfg = auth_cfg
         self.guard = guard
         self.failed_user: Optional[str] = None
-        self.setWindowTitle("EyeTracker — вход")
+        self.setWindowTitle(tr("{app} — вход", app=app_name()))
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         lay = QtWidgets.QFormLayout(self)
         if purpose:
@@ -24,8 +25,8 @@ class LoginDialog(QtWidgets.QDialog):
         self.user = QtWidgets.QLineEdit(auth_cfg.username)
         self.password = QtWidgets.QLineEdit()
         self.password.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        lay.addRow("Логин:", self.user)
-        lay.addRow("Пароль:", self.password)
+        lay.addRow(tr("Логин:"), self.user)
+        lay.addRow(tr("Пароль:"), self.password)
         self.error = QtWidgets.QLabel()
         self.error.setStyleSheet("color: #c00;")
         self.error.setWordWrap(True)
@@ -56,12 +57,12 @@ class SetCredentialsDialog(QtWidgets.QDialog):
     def __init__(self, auth_cfg: AuthConfig, first_time: bool, parent=None):
         super().__init__(parent)
         self.auth_cfg = auth_cfg
-        self.setWindowTitle("EyeTracker — учётная запись администратора")
+        self.setWindowTitle(tr("{app} — учётная запись администратора", app=app_name()))
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         lay = QtWidgets.QFormLayout(self)
         if first_time:
-            info = QtWidgets.QLabel("Первый запуск: задайте логин и пароль для входа в настройки. "
-                                    "Без них изменить настройки и закрыть программу будет нельзя.")
+            info = QtWidgets.QLabel(tr("Первый запуск: задайте логин и пароль для входа в настройки. "
+                                       "Без них изменить настройки и закрыть программу будет нельзя."))
             info.setWordWrap(True)
             lay.addRow(info)
         self.user = QtWidgets.QLineEdit(auth_cfg.username or "admin")
@@ -69,9 +70,9 @@ class SetCredentialsDialog(QtWidgets.QDialog):
         self.p2 = QtWidgets.QLineEdit()
         for p in (self.p1, self.p2):
             p.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        lay.addRow("Логин:", self.user)
-        lay.addRow("Новый пароль:", self.p1)
-        lay.addRow("Повтор пароля:", self.p2)
+        lay.addRow(tr("Логин:"), self.user)
+        lay.addRow(tr("Новый пароль:"), self.p1)
+        lay.addRow(tr("Повтор пароля:"), self.p2)
         self.error = QtWidgets.QLabel()
         self.error.setStyleSheet("color: #c00;")
         lay.addRow(self.error)
@@ -83,7 +84,7 @@ class SetCredentialsDialog(QtWidgets.QDialog):
 
     def _ok(self) -> None:
         if self.p1.text() != self.p2.text():
-            self.error.setText("Пароли не совпадают")
+            self.error.setText(tr("Пароли не совпадают"))
             return
         try:
             auth.set_credentials(self.auth_cfg, self.user.text(), self.p1.text())

@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from .config import CameraConfig
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ class Camera:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.last_error = ""
+        self.grabs = 0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -103,7 +105,7 @@ class Camera:
                 self._release()
                 self._cap = open_capture(self.cfg)
                 if not self._cap.isOpened():
-                    self.last_error = f"Камера «{self.cfg.source}» недоступна"
+                    self.last_error = tr("Камера «{source}» недоступна", source=self.cfg.source)
                     if failures == 0:
                         log.error(self.last_error)
                     failures += 1
@@ -114,6 +116,8 @@ class Camera:
                 failures = 0
                 self.last_error = ""
             ok = self._cap.grab()
+            if ok:
+                self.grabs += 1
             frame = None
             if ok and self._want:
                 ok, frame = self._cap.retrieve()
@@ -121,7 +125,7 @@ class Camera:
                 failures += 1
                 if failures > 30:
                     log.warning("Потерян сигнал камеры, переподключение")
-                    self.last_error = "Нет кадров с камеры"
+                    self.last_error = tr("Нет кадров с камеры")
                     self._release()
                     failures = 0
                 else:

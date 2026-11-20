@@ -22,6 +22,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+from ..i18n import tr
+
 log = logging.getLogger(__name__)
 
 # Индексы точек MediaPipe Face Mesh
@@ -58,7 +60,7 @@ class GazeZone:
     def from_points(cls, points, margin: float = 4.0, min_span: float = 6.0) -> "GazeZone":
         arr = np.asarray(points, dtype=np.float64)
         if arr.ndim != 2 or arr.shape[0] < 2:
-            raise ValueError("Недостаточно точек калибровки")
+            raise ValueError(tr("Недостаточно точек калибровки"))
         ymin, ymax = float(arr[:, 0].min()), float(arr[:, 0].max())
         pmin, pmax = float(arr[:, 1].min()), float(arr[:, 1].max())
         if ymax - ymin < min_span:
@@ -125,7 +127,7 @@ class GazeEstimator:
                         raise
                     log.warning("Модель точек лица на NPU не запустилась (%s) — используется CPU", exc)
                     self._landmarks = FaceLandmarks(landmarker_model, "auto")
-                self.method = f"радужка/{self._landmarks.backend}"
+                self.method = tr("радужка") + "/" + self._landmarks.backend
                 log.info("Оценка взгляда: модель точек лица (%s, 1 поток), радужка + поворот головы",
                          self._landmarks.backend)
             except Exception as exc:  # noqa: BLE001

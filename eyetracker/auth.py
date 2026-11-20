@@ -9,6 +9,7 @@ import time
 from typing import Tuple
 
 from .config import AuthConfig
+from .i18n import tr
 
 MAX_FAILURES = 5
 LOCKOUT_S = 60.0
@@ -21,9 +22,9 @@ def hash_password(password: str, salt_hex: str, iterations: int) -> str:
 
 def set_credentials(auth: AuthConfig, username: str, password: str) -> None:
     if not username.strip():
-        raise ValueError("Логин не может быть пустым")
+        raise ValueError(tr("Логин не может быть пустым"))
     if len(password) < 4:
-        raise ValueError("Пароль должен содержать не менее 4 символов")
+        raise ValueError(tr("Пароль должен содержать не менее 4 символов"))
     auth.username = username.strip()
     auth.salt = secrets.token_hex(16)
     auth.iterations = max(auth.iterations, 100_000)
@@ -61,7 +62,7 @@ class LoginGuard:
     def attempt(self, auth: AuthConfig, username: str, password: str) -> Tuple[bool, str]:
         wait = self.remaining_lockout()
         if wait > 0:
-            return False, f"Слишком много неудачных попыток. Повторите через {int(wait) + 1} с."
+            return False, tr("Слишком много неудачных попыток. Повторите через {sec} с.", sec=int(wait) + 1)
         ok = verify(auth, username, password)
         with self._lock:
             if ok:
@@ -71,5 +72,5 @@ class LoginGuard:
             if self._failures >= self.max_failures:
                 self._failures = 0
                 self._locked_until = self._clock() + self.lockout_s
-                return False, f"Неверный логин или пароль. Вход заблокирован на {int(self.lockout_s)} с."
-        return False, "Неверный логин или пароль."
+                return False, tr("Неверный логин или пароль. Вход заблокирован на {sec} с.", sec=int(self.lockout_s))
+        return False, tr("Неверный логин или пароль.")

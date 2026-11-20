@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from ..i18n import tr
+
 log = logging.getLogger(__name__)
 
 
@@ -165,9 +167,9 @@ class FaceDatabase:
     def add_person(self, name: str, embeddings: np.ndarray, photo: Optional[np.ndarray] = None) -> Person:
         name = name.strip()
         if not name:
-            raise ValueError("Имя не может быть пустым")
+            raise ValueError(tr("Имя не может быть пустым"))
         if embeddings.ndim != 2 or embeddings.shape[0] == 0:
-            raise ValueError("Нет образцов лица")
+            raise ValueError(tr("Нет образцов лица"))
         with self._lock:
             pid = uuid.uuid4().hex
             person = Person(pid, name, time.time(), embeddings.astype(np.float32))
@@ -191,7 +193,7 @@ class FaceDatabase:
     def rename(self, pid: str, name: str) -> None:
         with self._lock:
             if not name.strip():
-                raise ValueError("Имя не может быть пустым")
+                raise ValueError(tr("Имя не может быть пустым"))
             self._persons[pid].name = name.strip()
             self._save_index()
             self.version += 1

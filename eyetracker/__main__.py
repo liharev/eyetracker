@@ -12,7 +12,7 @@ from .resources import limit_threads_env
 
 limit_threads_env(1)  # до импорта numpy/cv2/LiteRT
 
-from . import APP_NAME, __version__, paths  # noqa: E402
+from . import __version__, paths  # noqa: E402
 
 
 def setup_logging(debug: bool) -> None:
@@ -31,75 +31,98 @@ def setup_logging(debug: bool) -> None:
 
 def cmd_download() -> int:
     from . import models
+    from .i18n import tr
 
     rc = 0
     for key in models.MODELS:
         path = models.find(key)
         if path:
-            print(f"[есть]   {key}: {path}")
+            print(tr("[есть]   {key}: {path}", key=key, path=path))
             continue
         try:
-            print(f"[готово] {key}: {models.download(key)}")
+            print(tr("[готово] {key}: {path}", key=key, path=models.download(key)))
         except Exception as exc:  # noqa: BLE001
-            print(f"[ошибка] {key}: {exc}")
+            print(tr("[ошибка] {key}: {error}", key=key, error=exc))
             rc = 1 if models.MODELS[key].required else rc
     return rc
 
 
 def cmd_check() -> int:
     import glob
+    import importlib.util
     import shutil
+    from importlib.metadata import PackageNotFoundError, version
 
-    from . import models
+    from . import models, npu
+    from .i18n import app_name, tr
     from .locker import ScreenLocker, candidate_commands
     from .resources import efficiency_cores
 
-    print(f"{APP_NAME} {__version__}, Python {sys.version.split()[0]}")
+    yes, no = tr("да"), tr("нет")
+    print(f"{app_name()} {__version__}, Python {sys.version.split()[0]}")
     try:
         import cv2
-        print(f"OpenCV {cv2.__version__}: YuNet={'да' if hasattr(cv2, 'FaceDetectorYN') else 'НЕТ'}")
+        print(f"OpenCV {cv2.__version__}: YuNet={yes if hasattr(cv2, 'FaceDetectorYN') else no.upper()}")
     except ImportError:
-        print("OpenCV: НЕ УСТАНОВЛЕН")
-    import importlib.util
-    from importlib.metadata import PackageNotFoundError, version
-
+        print(tr("OpenCV: НЕ УСТАНОВЛЕН"))
     try:
         if importlib.util.find_spec("ai_edge_litert") is None:
             raise PackageNotFoundError
-        print(f"LiteRT {version('ai-edge-litert')}: модель точек лица выполняется через LiteRT (быстрее)")
+        print(tr("LiteRT {v}: модель точек лица выполняется через LiteRT (быстрее)", v=version("ai-edge-litert")))
     except (PackageNotFoundError, ValueError):
-        print("LiteRT: нет — модель точек лица будет выполняться через OpenCV DNN (медленнее, но работает)")
+        print(tr("LiteRT: нет — модель точек лица будет выполняться через OpenCV DNN (медленнее, но работает)"))
     try:
         from .qt import QT_API
         print(f"Qt: {QT_API}")
     except ImportError:
-        print("Qt: НЕ УСТАНОВЛЕН (нужен python3-pyqt5 или PySide6)")
+        print(tr("Qt: НЕ УСТАНОВЛЕН (нужен python3-pyqt5 или PySide6)"))
     for key in models.MODELS:
-        print(f"Модель {key}: {models.find(key) or 'нет (python3 -m eyetracker --download-models)'}")
-    from . import npu
-
+        print(tr("Модель {key}: {path}", key=key,
+                 path=models.find(key) or tr("нет (python3 -m eyetracker --download-models)")))
     ok, why = npu.availability()
     rknn = [n for n in ("yunet_320x256.rknn", "yunet_128x128.rknn", "sface_112.rknn", "face_landmarks_256.rknn")
             if models.find_rknn(n)]
-    print(f"NPU RK3588: {why}; модели .rknn: {len(rknn)} из 4"
-          + (" — нейросети будут выполняться на NPU" if ok and len(rknn) == 4 else ""))
-    print("Камеры:", ", ".join(sorted(glob.glob("/dev/video*"))) or "не найдены")
-    print("Команды блокировки:", "; ".join(" ".join(c) for c in candidate_commands()) or "не найдены")
-    print("Состояние блокировки определяется:", "да" if ScreenLocker().is_locked() is not None else "нет")
+    print(tr("NPU RK3588: {why}; модели .rknn: {n} из 4", why=why, n=len(rknn))
+          + (tr(" — нейросети будут выполняться на NPU") if ok and len(rknn) == 4 else ""))
+    print(tr("Камеры:"), ", ".join(sorted(glob.glob("/dev/video*"))) or tr("не найдены"))
+    print(tr("Команды блокировки:"), "; ".join(" ".join(c) for c in candidate_commands()) or tr("не найдены"))
+    print(tr("Состояние блокировки определяется:"), yes if ScreenLocker().is_locked() is not None else no)
     players = [p for p in ("paplay", "pw-play", "ffplay", "mpv", "aplay") if shutil.which(p)]
-    print("Проигрыватели звука:", ", ".join(players) or "не найдены")
-    print("Энергоэффективные ядра:", efficiency_cores() or "система однородная")
-    print("Сеанс:", os.environ.get("XDG_SESSION_TYPE", "?"), os.environ.get("XDG_CURRENT_DESKTOP", "?"))
+    print(tr("Проигрыватели звука:"), ", ".join(players) or tr("не найдены"))
+    print(tr("Энергоэффективные ядра:"), efficiency_cores() or tr("система однородная"))
+    print(tr("Сеанс:"), os.environ.get("XDG_SESSION_TYPE", "?"), os.environ.get("XDG_CURRENT_DESKTOP", "?"))
+    return 0
+
+
+def cmd_install_icons() -> int:
+    """Значки для ярлыков (меню приложений, автозапуск) в ~/.local/share/icons."""
+    from pathlib import Path
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from . import icons
+    from .qt import QtGui
+
+    app = QtGui.QGuiApplication([sys.argv[0]])  # нужен для отрисовки
+    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "icons"
+    for path in icons.install_desktop_icons(base).values():
+        print(path)
+    del app
     return 0
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="eyetracker", description=f"{APP_NAME} {__version__}")
-    parser.add_argument("--settings", action="store_true", help="открыть настройки (в т.ч. у запущенного экземпляра)")
-    parser.add_argument("--download-models", action="store_true", help="загрузить модели нейросетей и выйти")
-    parser.add_argument("--check", action="store_true", help="проверить окружение и выйти")
-    parser.add_argument("--no-download", action="store_true", help="не загружать модели автоматически")
-    parser.add_argument("--debug", action="store_true", help="подробный журнал")
+    from . import i18n
+    from .config import ConfigStore
+    from .i18n import app_name, tr
+
+    i18n.set_language(ConfigStore().load().general.language)
+    parser = argparse.ArgumentParser(prog="eyetracker", description=f"{app_name()} {__version__}")
+    parser.add_argument("--settings", action="store_true", help=tr("открыть настройки (в т.ч. у запущенного экземпляра)"))
+    parser.add_argument("--download-models", action="store_true", help=tr("загрузить модели нейросетей и выйти"))
+    parser.add_argument("--check", action="store_true", help=tr("проверить окружение и выйти"))
+    parser.add_argument("--install-icons", action="store_true", help=tr("установить значки для ярлыков и выйти"))
+    parser.add_argument("--no-download", action="store_true", help=tr("не загружать модели автоматически"))
+    parser.add_argument("--debug", action="store_true", help=tr("подробный журнал"))
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
@@ -108,6 +131,8 @@ def main(argv=None) -> int:
         return cmd_download()
     if args.check:
         return cmd_check()
+    if args.install_icons:
+        return cmd_install_icons()
 
     setup_logging(args.debug)
     from .config import ConfigStore

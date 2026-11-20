@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from . import paths
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -94,10 +95,10 @@ def ensure_builtin_sounds() -> None:
 
 def list_sounds() -> List[Tuple[str, str]]:
     """[(идентификатор, подпись)]"""
-    items = [(f"builtin:{k}", v) for k, v in BUILTIN.items()]
+    items = [(f"builtin:{k}", tr(v)) for k, v in BUILTIN.items()]
     for p in sorted(custom_dir().iterdir()):
         if p.suffix.lower() in ALLOWED_EXT and p.is_file():
-            items.append((f"custom:{p.name}", f"Свой: {p.name}"))
+            items.append((f"custom:{p.name}", tr("Свой: {name}", name=p.name)))
     return items
 
 
@@ -115,7 +116,7 @@ def resolve(sound_id: str) -> Optional[Path]:
 def import_sound(src: Path) -> str:
     src = Path(src)
     if src.suffix.lower() not in ALLOWED_EXT:
-        raise ValueError(f"Неподдерживаемый формат. Допустимо: {', '.join(sorted(ALLOWED_EXT))}")
+        raise ValueError(tr("Неподдерживаемый формат. Допустимо: {formats}", formats=", ".join(sorted(ALLOWED_EXT))))
     safe = re.sub(r"[^\w.\-]+", "_", src.name, flags=re.UNICODE).strip("._") or "sound"
     if not safe.lower().endswith(src.suffix.lower()):
         safe += src.suffix.lower()
@@ -127,7 +128,7 @@ def import_sound(src: Path) -> str:
 def delete_sound(sound_id: str) -> None:
     kind, _, name = sound_id.partition(":")
     if kind != "custom":
-        raise ValueError("Встроенные сигналы удалить нельзя")
+        raise ValueError(tr("Встроенные сигналы удалить нельзя"))
     p = resolve(sound_id)
     if p:
         p.unlink()

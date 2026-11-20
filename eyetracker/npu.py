@@ -11,12 +11,14 @@ import ctypes.util
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import List, Sequence
 
 import numpy as np
 
 from . import paths
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +87,10 @@ class _SdkVersion(ctypes.Structure):
     _fields_ = [("api_version", ctypes.c_char * 256), ("drv_version", ctypes.c_char * 256)]
 
 
+# Статистика занятости NPU программой (для самодиагностики)
+STATS = {"busy_s": 0.0, "calls": 0, "models": {}}
+
+
 class NpuError(RuntimeError):
     pass
 
@@ -118,7 +124,7 @@ def load_library():
         if _lib is not None:
             return _lib
         if os.uname().machine not in ("aarch64", "arm64"):
-            _lib_error = "NPU Rockchip доступен только на ARM64 (RK3588)"
+            _lib_error = tr("NPU Rockchip доступен только на ARM64 (RK3588)")
             raise NpuError(_lib_error)
         errors = []
         for p in library_paths():
@@ -133,7 +139,7 @@ def load_library():
             _lib = lib
             log.info("NPU: библиотека %s", p)
             return lib
-        _lib_error = "не найдена librknnrt.so (её устанавливает install.sh)" + (
+        _lib_error = tr("не найдена librknnrt.so (её устанавливает install.sh)") + (
             "; " + "; ".join(errors) if errors else "")
         raise NpuError(_lib_error)
 
@@ -155,7 +161,7 @@ def _declare(lib) -> None:
 
 def _check(ret: int, what: str) -> None:
     if ret != RKNN_SUCC:
-        raise NpuError(f"{what}: код ошибки {ret}")
+        raise NpuError(tr("{what}: код ошибки {code}", what=what, code=ret))
 
 
 def device_present() -> bool:
@@ -227,9 +233,16 @@ class RknnModel:
             ins[i].pass_through = 0
             ins[i].type = RKNN_TENSOR_UINT8
             ins[i].fmt = RKNN_TENSOR_NHWC
+        t0 = time.perf_counter()
         _check(self.lib.rknn_inputs_set(self.ctx, len(arrays), ins), "rknn_inputs_set")
         _check(self.lib.rknn_run(self.ctx, None), "rknn_run")
         _check(self.lib.rknn_outputs_get(self.ctx, len(self._out_bufs), self._outs, None), "rknn_outputs_get")
+        dt = time.perf_counter() - t0
+        STATS["busy_s"] += dt
+        STATS["calls"] += 1
+        m = STATS["models"].setdefault(self.path.name, [0, 0.0])
+        m[0] += 1
+        m[1] += dt
         try:
             return [b.copy() for b in self._out_bufs]
         finally:
@@ -259,14 +272,14 @@ class RknnModel:
 def availability() -> tuple:
     """(доступен ли NPU, пояснение) — для самопроверки и выбора ускорителя."""
     if os.uname().machine not in ("aarch64", "arm64"):
-        return False, "не ARM64 — NPU Rockchip недоступен"
+        return False, tr("не ARM64 — NPU Rockchip недоступен")
     if not device_present():
-        return False, "устройство NPU (драйвер rknpu) не найдено"
+        return False, tr("устройство NPU (драйвер rknpu) не найдено")
     try:
         load_library()
     except NpuError as exc:
         return False, str(exc)
-    return True, "готов"
+    return True, tr("готов")
 
 
 def last_error() -> str:

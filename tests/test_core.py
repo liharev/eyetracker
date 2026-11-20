@@ -252,3 +252,14 @@ def test_sounds(tmp_path):
         sound.delete_sound("builtin:beep")
     sound.delete_sound(sid)
     assert sound.resolve(sid) is None
+
+
+def test_gaze_email_route_sends_only_timeout_notice(tmp_path):
+    c = Config()
+    c.notify.routes["gaze"].email = True
+    fm = FakeMailer()
+    d = EventDispatcher(c, EventStore(tmp_path / "e.db"), fm)
+    d.publish(Event("gaze", "gaze_stage_red", "рамка"))
+    d.publish(Event("gaze", "gaze_stage_sound", "звук"))
+    d.publish(Event("gaze", "gaze_email", "долго не смотрит"))
+    assert [e.type for e, _ in fm.sent] == ["gaze_email"]

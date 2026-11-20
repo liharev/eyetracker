@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Установка EyeTracker для текущего пользователя (Radxa OS / Debian / Ubuntu, aarch64 и x86_64).
+# Установка CAMAI бдительность (CAMAI vigilance) для текущего пользователя (Radxa OS / Debian / Ubuntu, aarch64 и x86_64).
 #
 #   ./install.sh               — полная установка (LiteRT для быстрой оценки взгляда по радужке)
 #   WITH_LITERT=0 ./install.sh — без LiteRT: модель точек лица выполняется через OpenCV
@@ -48,7 +48,7 @@ if [ "$WITH_LITERT" != "0" ]; then
         echo "!! LiteRT недоступен для этой платформы — модель будет выполняться через OpenCV"
 fi
 
-echo "==> Установка EyeTracker"
+echo "==> Установка программы"
 "$VENV/bin/pip" install --no-deps --force-reinstall "$SRC"
 
 if [ "$WITH_NPU" != "0" ] && [ "$(uname -m)" = "aarch64" ]; then
@@ -91,12 +91,15 @@ chmod +x "$HOME/.local/bin/eyetracker"
 
 # пункт меню приложений
 mkdir -p "$HOME/.local/share/applications"
+# значки программы для меню и автозапуска
+"$VENV/bin/python" -m eyetracker --install-icons >/dev/null || echo "!! Не удалось установить значки"
 cat > "$HOME/.local/share/applications/eyetracker-settings.desktop" <<EOS
 [Desktop Entry]
 Type=Application
-Name=EyeTracker — настройки
+Name=CAMAI vigilance — settings
+Name[ru]=CAMAI бдительность — настройки
 Exec=$VENV/bin/python -m eyetracker --settings
-Icon=camera-web
+Icon=camai-vigilance
 Terminal=false
 Categories=Utility;Security;
 EOS

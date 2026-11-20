@@ -15,7 +15,8 @@ from email.utils import formatdate, make_msgid
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .config import EVENT_CATEGORIES, EmailConfig, ScheduleConfig
+from .config import EVENT_CATEGORIES, EmailConfig, ScheduleConfig, category_title
+from .i18n import app_name, tr
 from .events import Event, EventStore, events_to_csv
 
 log = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ def build_message(cfg: EmailConfig, subject: str, body: str,
 
 def send_message(cfg: EmailConfig, msg: EmailMessage) -> None:
     if not is_configured(cfg):
-        raise RuntimeError("Не настроен SMTP-сервер или адрес получателя")
+        raise RuntimeError(tr("Не настроен SMTP-сервер или адрес получателя"))
     ctx = ssl.create_default_context()
     if cfg.security == "ssl":
         server = smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=cfg.timeout_s, context=ctx)
@@ -68,18 +69,18 @@ def send_message(cfg: EmailConfig, msg: EmailMessage) -> None:
 
 
 def host_info() -> str:
-    return f"Компьютер: {socket.gethostname()}"
+    return tr("Компьютер: {host}", host=socket.gethostname())
 
 
 def format_event(ev: Event) -> str:
     lines = [
-        f"Время: {ev.time_str}",
-        f"Категория: {ev.category_title}",
-        f"Событие: {ev.message}",
+        tr("Время: {value}", value=ev.time_str),
+        tr("Категория: {value}", value=ev.category_title),
+        tr("Событие: {value}", value=ev.message),
         host_info(),
     ]
     if ev.details:
-        lines.append("Подробности: " + json.dumps(ev.details, ensure_ascii=False))
+        lines.append(tr("Подробности: {value}", value=json.dumps(ev.details, ensure_ascii=False)))
     return "\n".join(lines)
 
 
@@ -154,7 +155,7 @@ def parse_times(value: str) -> List[Tuple[int, int]]:
         hh, _, mm = part.partition(":")
         h, m = int(hh), int(mm or 0)
         if not (0 <= h < 24 and 0 <= m < 60):
-            raise ValueError(f"Неверное время: {part}")
+            raise ValueError(tr("Неверное время: {value}", value=part))
         out.append((h, m))
     return sorted(set(out))
 
@@ -178,25 +179,26 @@ def next_digest_time(after: datetime, cfg: ScheduleConfig) -> datetime:
 def build_digest(cfg: EmailConfig, events: List[Event], period_from: Optional[datetime],
                  period_to: datetime) -> EmailMessage:
     lines = [
-        "Отчёт EyeTracker о событиях",
+        tr("Отчёт {app} о событиях", app=app_name()),
         host_info(),
-        f"Период: {period_from.strftime('%Y-%m-%d %H:%M') if period_from else '—'} — {period_to.strftime('%Y-%m-%d %H:%M')}",
-        f"Всего событий: {len(events)}",
+        tr("Период: {start} — {end}", start=period_from.strftime('%Y-%m-%d %H:%M') if period_from else '—',
+           end=period_to.strftime('%Y-%m-%d %H:%M')),
+        tr("Всего событий: {n}", n=len(events)),
         "",
     ]
     counts = {}
     for e in events:
         counts[e.category] = counts.get(e.category, 0) + 1
-    for cat, title in EVENT_CATEGORIES.items():
+    for cat in EVENT_CATEGORIES:
         if counts.get(cat):
-            lines.append(f"  {title}: {counts[cat]}")
+            lines.append(f"  {category_title(cat)}: {counts[cat]}")
     lines.append("")
     for e in events[:500]:
         lines.append(f"{e.time_str}  {e.message}")
     if len(events) > 500:
-        lines.append(f"... и ещё {len(events) - 500} (см. вложение CSV)")
+        lines.append(tr("... и ещё {n} (см. вложение CSV)", n=len(events) - 500))
     attachments = [("events.csv", events_to_csv(events).encode("utf-8-sig"), "text", "csv")] if events else []
-    return build_message(cfg, f"Отчёт о событиях ({len(events)})", "\n".join(lines), attachments)
+    return build_message(cfg, tr("Отчёт о событиях ({n})", n=len(events)), "\n".join(lines), attachments)
 
 
 class DigestScheduler:
@@ -259,17 +261,17 @@ class DigestScheduler:
         if not events and not (cfg.schedule.send_empty or force):
             self.last_run = now
             self._save_last()
-            return True, "Новых событий нет — отчёт не отправлялся"
+            return True, tr("Новых событий нет — отчёт не отправлялся")
         if not is_configured(cfg.email):
-            return False, "SMTP не настроен — события сохранены и будут отправлены позже"
+            return False, tr("SMTP не настроен — события сохранены и будут отправлены позже")
         msg = build_digest(cfg.email, events, self.last_run, now)
         try:
             self.mailer.send_now(msg)
         except Exception as exc:  # noqa: BLE001
             log.error("Не удалось отправить отчёт: %s", exc)
-            return False, f"Ошибка отправки: {exc}"
+            return False, tr("Ошибка отправки: {error}", error=exc)
         self.store.mark_digested([e.id for e in events if e.id is not None])
         self.last_run = now
         self._save_last()
         log.info("Отчёт отправлен (%d событий)", len(events))
-        return True, f"Отчёт отправлен ({len(events)} событий)"
+        return True, tr("Отчёт отправлен ({n} событий)", n=len(events))

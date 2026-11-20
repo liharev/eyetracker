@@ -26,10 +26,18 @@ EVENT_CATEGORIES: Dict[str, str] = {
 }
 
 
+def category_title(key: str) -> str:
+    from .i18n import tr
+
+    return tr(EVENT_CATEGORIES.get(key, key))
+
+
 @dataclass
 class GeneralConfig:
     autostart: bool = True
     log_retention_days: int = 90
+    language: str = "system"           # system | ru | en
+    tray_icon_color: str = "auto"      # auto | light | dark — монохромный значок в трее
 
 
 @dataclass
@@ -102,6 +110,7 @@ class GazeConfig:
     t1_s: float = 5.0     # красная рамка
     t2_s: float = 10.0    # мигающая рамка
     t3_s: float = 15.0    # звуковой сигнал
+    t4_s: float = 60.0    # уведомление на e-mail (если включена отправка событий взгляда на почту)
     return_debounce_s: float = 0.4
     face_lost_is_away: bool = True
     eyes_closed_is_away: bool = True
@@ -131,7 +140,7 @@ class EmailConfig:
     password: str = ""
     sender: str = ""
     recipients: str = ""        # через запятую
-    subject_prefix: str = "[EyeTracker]"
+    subject_prefix: str = "[CAMAI]"
     attach_snapshot: bool = True
     timeout_s: float = 20.0
 
@@ -212,6 +221,13 @@ class Config:
         g.t1_s = max(0.0, float(g.t1_s))
         g.t2_s = max(g.t1_s, float(g.t2_s))
         g.t3_s = max(g.t2_s, float(g.t3_s))
+        g.t4_s = max(1.0, float(g.t4_s))
+        if self.general.language not in ("system", "ru", "en"):
+            self.general.language = "system"
+        if self.general.tray_icon_color not in ("auto", "light", "dark"):
+            self.general.tray_icon_color = "auto"
+        if self.email.subject_prefix == "[EyeTracker]":
+            self.email.subject_prefix = "[CAMAI]"   # переименование программы
         if g.zone_yaw_min > g.zone_yaw_max:
             g.zone_yaw_min, g.zone_yaw_max = g.zone_yaw_max, g.zone_yaw_min
         if g.zone_pitch_min > g.zone_pitch_max:
@@ -240,6 +256,13 @@ class Config:
         for route in self.notify.routes.values():
             if route.digest:
                 route.log = True  # отчёт по расписанию строится из журнала
+
+
+def gaze_email_enabled(cfg: "Config") -> bool:
+    """Включена ли отправка на e-mail для событий контроля взгляда (тогда действует таймаут
+    уведомления на почту)."""
+    route = cfg.notify.routes.get("gaze")
+    return bool(route and route.email)
 
 
 def _coerce(default: Any, value: Any) -> Any:

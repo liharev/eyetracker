@@ -177,3 +177,20 @@ def test_gaze_reset_on_lock():
     assert r[-1].gaze_stage == GazeStage.SOUND
     r = run(p, 7.1, 8, [auth()], gaze_on_screen=False, screen_locked=True)
     assert r[-1].gaze_stage == GazeStage.NORMAL
+
+
+def test_gaze_email_after_timeout_only_when_enabled():
+    c = gaze_cfg()
+    c.gaze.t4_s = 3
+    p = Policy(c, 0)
+    r = run(p, 0, 10, [auth()], gaze_on_screen=False)
+    assert not events(r, "gaze_email")              # отправка на e-mail не включена — таймаут неактивен
+    c.notify.routes["gaze"].email = True
+    p = Policy(c, 0)
+    r = run(p, 0, 2.9, [auth()], gaze_on_screen=False)
+    assert not events(r, "gaze_email")
+    r = run(p, 3.0, 10, [auth()], gaze_on_screen=False)
+    assert len(events(r, "gaze_email")) == 1         # одно письмо за эпизод
+    run(p, 10.1, 11, [auth()], gaze_on_screen=True)  # вернулся — сброс
+    r = run(p, 11.1, 15, [auth()], gaze_on_screen=False)
+    assert len(events(r, "gaze_email")) == 1

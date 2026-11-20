@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from .config import EVENT_CATEGORIES, Config
+from .config import Config, category_title
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class Event:
 
     @property
     def category_title(self) -> str:
-        return EVENT_CATEGORIES.get(self.category, self.category)
+        return category_title(self.category)
 
 
 class EventStore:
@@ -155,11 +156,16 @@ class EventStore:
 def events_to_csv(events: List[Event]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["id", "время", "категория", "тип", "сообщение", "подробности", "снимок"])
+    w.writerow(["id", tr("время"), tr("категория"), tr("тип"), tr("сообщение"), tr("подробности"), tr("снимок")])
     for e in events:
         w.writerow([e.id or "", e.time_str, e.category_title, e.type, e.message,
                     json.dumps(e.details, ensure_ascii=False), e.snapshot_path or ""])
     return buf.getvalue()
+
+
+# Для этих категорий на e-mail «сразу» уходят только перечисленные типы событий:
+# по контролю взгляда — только уведомление по таймауту (стадии рамки/звука идут в журнал).
+EMAIL_ONLY_TYPES = {"gaze": {"gaze_email"}}
 
 
 class EventDispatcher:
@@ -197,7 +203,8 @@ class EventDispatcher:
                     ev.snapshot_jpeg = snapshot_backup
                 except sqlite3.Error as exc:
                     log.error("Не удалось записать событие в журнал: %s", exc)
-            if route.email and self.mailer is not None:
+            allowed = EMAIL_ONLY_TYPES.get(ev.category)
+            if route.email and self.mailer is not None and (allowed is None or ev.type in allowed):
                 attach = ev.snapshot_jpeg if self.cfg.email.attach_snapshot else None
                 self.mailer.send_event(ev, attach)
         for fn in self._listeners:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import statistics
 from typing import List, Optional, Tuple
 
+from ..i18n import tr
 from ..qt import Qt, QtCore, QtGui, QtWidgets, Signal
 from ..vision.gaze import GazeZone
 
@@ -42,7 +43,7 @@ class CalibrationWindow(QtWidgets.QWidget):
 
     def keyPressEvent(self, ev):  # noqa: N802
         if ev.key() == Qt.Key.Key_Escape:
-            self._finish(None, "Калибровка отменена")
+            self._finish(None, tr("Калибровка отменена"))
 
     def _next_point(self) -> None:
         if self.phase == "done":
@@ -84,8 +85,8 @@ class CalibrationWindow(QtWidgets.QWidget):
             return
         self._timer.stop()
         if len(self.samples) < MIN_SAMPLES:
-            self._finish(None, "Не удалось определить взгляд: лицо не найдено или плохо освещено. "
-                               "Сядьте перед камерой и повторите.")
+            self._finish(None, tr("Не удалось определить взгляд: лицо не найдено или плохо освещено. "
+                                  "Сядьте перед камерой и повторите."))
             return
         self.results.append((statistics.median(s[0] for s in self.samples),
                              statistics.median(s[1] for s in self.samples)))
@@ -109,9 +110,9 @@ class CalibrationWindow(QtWidgets.QWidget):
         p.setFont(f)
         if self.phase == "intro":
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                       "Калибровка взгляда\n\nСядьте в обычное рабочее положение.\n"
-                       "Смотрите на появляющиеся точки (только глазами и головой — как при работе).\n"
-                       "Esc — отмена.")
+                       tr("Калибровка взгляда\n\nСядьте в обычное рабочее положение.\n"
+                          "Смотрите на появляющиеся точки (только глазами и головой — как при работе).\n"
+                          "Esc — отмена."))
             return
         if 0 <= self.idx < len(POINTS):
             fx, fy = POINTS[self.idx]
@@ -124,4 +125,4 @@ class CalibrationWindow(QtWidgets.QWidget):
             p.drawEllipse(c, r / 3, r / 3)
             p.setPen(QtGui.QColor("#888888"))
             p.drawText(self.rect().adjusted(0, 0, 0, -40), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom,
-                       f"Точка {self.idx + 1} из {len(POINTS)}")
+                       tr("Точка {i} из {n}", i=self.idx + 1, n=len(POINTS)))

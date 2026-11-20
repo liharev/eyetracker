@@ -12,7 +12,7 @@ from typing import Callable, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from . import models
+from . import i18n, models
 from .camera import Camera
 from .config import Config
 from .events import Event, EventDispatcher
@@ -48,6 +48,8 @@ class EngineStatus:
     db_size: int = 0
     gaze_method: str = ""
     accelerator: str = ""
+    proc_ms: float = 0.0          # среднее время обработки кадра
+    camera_fps: float = 0.0       # частота кадров камеры
 
 
 class Engine:
@@ -62,6 +64,8 @@ class Engine:
         self.camera_factory = camera_factory
         self.npu_active = False
         self.npu_error = ""
+        self._last_grabs = 0
+        self.started_at = time.time()
 
         self.on_status: Optional[Callable[[EngineStatus], None]] = None
         self.on_gaze_stage: Optional[Callable[[int], None]] = None
@@ -168,8 +172,8 @@ class Engine:
             need += ["sface"] if self.embedder is None else []
             paths = {k: models.ensure(k, self.allow_download) for k in need}
             if not all(paths.values()):
-                self._set_status(state="error", message="Нет файлов моделей YuNet/SFace. Запустите: "
-                                                        "python3 -m eyetracker --download-models")
+                self._set_status(state="error", message=i18n.tr(
+                    "Нет файлов моделей YuNet/SFace. Запустите: {cmd}", cmd="python3 -m eyetracker --download-models"))
                 return False
             if self.detector is None:
                 self.detector = FaceDetector(paths["yunet"], p.detect_threshold, detect_width=p.detect_width)
@@ -190,10 +194,13 @@ class Engine:
         ok, why = npu.availability()
         files = {k: models.find_rknn(k) for k in ("yunet_320x256.rknn", "yunet_128x128.rknn", "sface_112.rknn")}
         if ok and not all(files.values()):
-            ok, why = False, "нет файлов моделей .rknn (их устанавливает install.sh)"
+            ok, why = False, i18n.tr("нет файлов моделей .rknn (их устанавливает install.sh)")
         if not ok:
             self.npu_error = why
-            (log.warning if p.accelerator == "npu" else log.info)("NPU не используется: %s — работа на CPU", why)
+            if p.accelerator == "npu":
+                log.warning("NPU не используется: %s — работа на CPU", why)
+            else:
+                log.info("NPU не используется: %s — работа на CPU", why)
             return
         try:
             self.detector = NpuFaceDetector(files["yunet_320x256.rknn"], files["yunet_128x128.rknn"],
@@ -285,7 +292,8 @@ class Engine:
             frame, frame_t, seq = self.camera.read(timeout=1.0)
             if frame is None or seq == last_seq:
                 if time.monotonic() - no_frame_since > 3.0:
-                    self._set_status(state="camera_error", message=self.camera.last_error or "Нет кадров с камеры")
+                    self._set_status(state="camera_error",
+                                     message=self.camera.last_error or i18n.tr("Нет кадров с камеры"))
                     self._set_stage(GazeStage.NORMAL)
                     self._stop.wait(0.5)
                 continue
@@ -301,11 +309,17 @@ class Engine:
                     log.info("Контроль возобновлён")
                 else:
                     log.info("Контроль приостановлен")
+            t_proc = time.perf_counter()
             self._process_frame(frame, now, paused)
+            dt_ms = (time.perf_counter() - t_proc) * 1000
+            self.status.proc_ms = dt_ms if self.status.proc_ms == 0 else 0.8 * self.status.proc_ms + 0.2 * dt_ms
 
             fps_n += 1
             if now - fps_t >= 2.0:
                 self.status.fps = fps_n / (now - fps_t)
+                grabs = getattr(self.camera, "grabs", 0)
+                self.status.camera_fps = (grabs - self._last_grabs) / (now - fps_t)
+                self._last_grabs = grabs
                 fps_t, fps_n = now, 0
             period = 1.0 / self._target_fps(paused)
             self._stop.wait(max(0.0, period - (time.monotonic() - loop_start)))
@@ -411,7 +425,7 @@ class Engine:
         sample = target.gaze if target is not None else None
         self._set_status(
             state="paused" if paused else "running",
-            message="" if not db_empty else "База авторизованных лиц пуста — правила 4, 5, 6 не работают",
+            message="" if not db_empty else i18n.tr("База авторизованных лиц пуста — правила 4, 5, 6 не работают"),
             faces=len(tracks), authorized=auth_names,
             unknown=sum(1 for tr in tracks if tr.status == UNKNOWN and not db_empty),
             gaze_stage=int(self._stage), away_s=result.away_s if result else 0.0,
@@ -456,7 +470,8 @@ class Engine:
         def worker():
             try:
                 if not self.locker.lock():
-                    self.publish_system("lock_failed", "Не удалось заблокировать экран: нет подходящей команды")
+                    self.publish_system("lock_failed",
+                                        i18n.tr("Не удалось заблокировать экран: нет подходящей команды"))
             finally:
                 self._locking = False
 
@@ -482,9 +497,9 @@ class Engine:
             if tr.status == AUTHORIZED:
                 color, label = (60, 200, 60), f"{tr.name} {tr.score:.2f}"
             elif tr.status == UNKNOWN:
-                color, label = (40, 40, 230), f"Посторонний {tr.score:.2f}"
+                color, label = (40, 40, 230), i18n.tr("Посторонний {score:.2f}", score=tr.score)
             else:
-                color, label = (0, 200, 230), "?" if tr.recognizable else "далеко"
+                color, label = (0, 200, 230), "?" if tr.recognizable else i18n.tr("далеко")
             thick = 3 if tr is target else 1
             cv2.rectangle(img, (x, y), (x + w, y + h), color, thick)
             put_text(img, label, (x, max(0, y - 22)), color)
@@ -492,9 +507,10 @@ class Engine:
                 cv2.circle(img, (int(tr.row[4 + 2 * i]), int(tr.row[5 + 2 * i])), 2, color, -1)
         if target is not None and target.gaze is not None:
             g: GazeSample = target.gaze
-            state = "на экране" if on_screen else "МИМО"
-            put_text(img, f"Взгляд: yaw {g.yaw:+.0f}° pitch {g.pitch:+.0f}° — {state}"
-                          f"{' (глаза закрыты)' if g.eyes_closed else ''}", (8, 8),
+            state = i18n.tr("на экране") if on_screen else i18n.tr("МИМО")
+            put_text(img, i18n.tr("Взгляд: yaw {yaw:+.0f}° pitch {pitch:+.0f}° — {state}", yaw=g.yaw, pitch=g.pitch,
+                                  state=state)
+                     + (i18n.tr(" (глаза закрыты)") if g.eyes_closed else ""), (8, 8),
                      (60, 200, 60) if on_screen else (40, 40, 230))
             x, y, w, h = target.bbox
             cx, cy = x + w // 2, y + h // 2
