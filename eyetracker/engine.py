@@ -47,6 +47,7 @@ class EngineStatus:
     paused_until: float = 0.0
     db_size: int = 0
     gaze_method: str = ""
+    accelerator: str = ""
 
 
 class Engine:
@@ -59,6 +60,8 @@ class Engine:
         self.locker = locker or ScreenLocker(cfg.lock.method, cfg.lock.custom_command)
         self.allow_download = allow_download
         self.camera_factory = camera_factory
+        self.npu_active = False
+        self.npu_error = ""
 
         self.on_status: Optional[Callable[[EngineStatus], None]] = None
         self.on_gaze_stage: Optional[Callable[[int], None]] = None
@@ -155,17 +158,54 @@ class Engine:
         return eff
 
     def _init_models(self) -> bool:
-        paths = {k: models.ensure(k, self.allow_download) for k in ("yunet", "sface")}
-        if not paths["yunet"] or not paths["sface"]:
-            self._set_status(state="error", message="Нет файлов моделей YuNet/SFace. Запустите: "
-                                                    "python3 -m eyetracker --download-models")
-            return False
         p = self.cfg.processing
-        self.detector = FaceDetector(paths["yunet"], p.detect_threshold, detect_width=p.detect_width)
-        self.embedder = FaceEmbedder(paths["sface"])
+        self.detector = self.embedder = None
+        self.npu_active = False
+        if p.accelerator in ("auto", "npu"):
+            self._init_npu()
+        if self.detector is None or self.embedder is None:
+            need = ["yunet"] if self.detector is None else []
+            need += ["sface"] if self.embedder is None else []
+            paths = {k: models.ensure(k, self.allow_download) for k in need}
+            if not all(paths.values()):
+                self._set_status(state="error", message="Нет файлов моделей YuNet/SFace. Запустите: "
+                                                        "python3 -m eyetracker --download-models")
+                return False
+            if self.detector is None:
+                self.detector = FaceDetector(paths["yunet"], p.detect_threshold, detect_width=p.detect_width)
+            if self.embedder is None:
+                self.embedder = FaceEmbedder(paths["sface"])
+        self.status.accelerator = "NPU" if self.npu_active else "CPU"
         # Оценщик взгляда (модель точек лица) загружается лениво —
         # только когда контроль взгляда включён или открыта калибровка/просмотр.
         return True
+
+    def _init_npu(self) -> None:
+        """Перенос нейросетей на NPU RK3588; при любой ошибке — работа на CPU."""
+        from . import npu
+        from .vision.detector import NpuFaceDetector
+        from .vision.recognizer import NpuFaceEmbedder
+
+        p = self.cfg.processing
+        ok, why = npu.availability()
+        files = {k: models.find_rknn(k) for k in ("yunet_320x256.rknn", "yunet_128x128.rknn", "sface_112.rknn")}
+        if ok and not all(files.values()):
+            ok, why = False, "нет файлов моделей .rknn (их устанавливает install.sh)"
+        if not ok:
+            self.npu_error = why
+            (log.warning if p.accelerator == "npu" else log.info)("NPU не используется: %s — работа на CPU", why)
+            return
+        try:
+            self.detector = NpuFaceDetector(files["yunet_320x256.rknn"], files["yunet_128x128.rknn"],
+                                            p.detect_threshold, core=p.npu_core)
+            self.embedder = NpuFaceEmbedder(files["sface_112.rknn"], core=p.npu_core)
+            self.npu_active = True
+            self.npu_error = ""
+            log.info("NPU: детекция и распознавание лиц выполняются на NPU RK3588")
+        except Exception as exc:  # noqa: BLE001
+            self.detector = self.embedder = None
+            self.npu_error = str(exc)
+            log.warning("NPU не запустился (%s) — работа на CPU", exc)
 
     def _init_gaze(self) -> None:
         p = self.cfg.processing
@@ -173,7 +213,9 @@ class Engine:
             self.gaze.close()
             self.gaze = None
         lm = models.ensure("face_landmarker", self.allow_download) if p.precise_gaze else None
-        self.gaze = GazeEstimator(lm, p.precise_gaze, self.cfg.gaze.eye_gain, p.gaze_backend)
+        rknn = models.find_rknn("face_landmarks_256.rknn") if self.npu_active else None
+        backend = "npu" if rknn else p.gaze_backend
+        self.gaze = GazeEstimator(lm, p.precise_gaze, self.cfg.gaze.eye_gain, backend, rknn, p.npu_core)
         self.status.gaze_method = self.gaze.method
 
     def _apply_pending_config(self) -> None:
@@ -183,6 +225,13 @@ class Engine:
             return
         old = self.cfg
         self.cfg = new
+        if (new.processing.accelerator, new.processing.npu_core) != (old.processing.accelerator,
+                                                                     old.processing.npu_core):
+            if self.gaze:
+                self.gaze.close()
+                self.gaze = None
+            self._init_models()
+            self.tracker.reset_identities()
         if new.camera != old.camera and self.camera:
             self.camera.stop()
             self.camera = self.camera_factory(new.camera)

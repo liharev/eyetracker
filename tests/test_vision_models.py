@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def image(name="lena.jpg"):
-    from test_engine_integration import canvas
+    from eyetracker.devtools import canvas
     return canvas(cv2.imread(str(DATA / name)))
 
 

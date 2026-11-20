@@ -11,6 +11,7 @@ import pytest
 
 from eyetracker import models
 from eyetracker.config import Config
+from eyetracker.devtools import FakeCamera, FakeLocker, canvas  # noqa: F401
 from eyetracker.engine import Engine
 from eyetracker.events import EventDispatcher, EventStore
 from eyetracker.vision.recognizer import FaceDatabase
@@ -20,54 +21,6 @@ FIXTURES = Path(__file__).parent / "data"
 pytestmark = pytest.mark.skipif(
     not (models.find("yunet") and models.find("sface") and (FIXTURES / "lena.jpg").exists()),
     reason="нет моделей или тестовых изображений")
-
-
-class FakeCamera:
-    """Подставляет заданный кадр вместо камеры."""
-
-    def __init__(self, cfg):
-        self.frame = None
-        self.seq = 0
-        self.last_error = ""
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
-    def read(self, timeout=1.0):
-        time.sleep(0.01)
-        if self.frame is None:
-            return None, 0.0, self.seq
-        self.seq += 1
-        return self.frame.copy(), time.monotonic(), self.seq
-
-
-class FakeLocker:
-    def __init__(self):
-        self.calls = 0
-        self.locked = False
-
-    def lock(self):
-        self.calls += 1
-        self.locked = True
-        return True
-
-    def is_locked(self, max_age_s=1.0):
-        return self.locked
-
-    def configure(self, *a):
-        pass
-
-
-def canvas(img):
-    out = np.zeros((480, 640, 3), np.uint8)
-    h, w = img.shape[:2]
-    s = min(400 / h, 560 / w)
-    img = cv2.resize(img, (int(w * s), int(h * s)))
-    out[40:40 + img.shape[0], 40:40 + img.shape[1]] = img
-    return out
 
 
 def wait(pred, timeout=15):

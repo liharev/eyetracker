@@ -140,8 +140,8 @@ class _LiteRT:
         self._lm = next(o["index"] for o in outs if int(np.prod(o["shape"])) == 1434)
         self._score = next(o["index"] for o in outs if int(np.prod(o["shape"])) == 1 and o["index"] != self._lm)
 
-    def run(self, rgb01: np.ndarray) -> Tuple[np.ndarray, float]:
-        self._it.set_tensor(self._in, rgb01[None])
+    def run(self, rgb: np.ndarray) -> Tuple[np.ndarray, float]:
+        self._it.set_tensor(self._in, (rgb.astype(np.float32) * (1.0 / 255.0))[None])
         self._it.invoke()
         return (self._it.get_tensor(self._lm).reshape(-1, 3).copy(),
                 float(self._it.get_tensor(self._score).ravel()[0]))
@@ -154,7 +154,8 @@ class _OpenCV:
         self._net = cv2.dnn.readNetFromTFLite(np.frombuffer(model, np.uint8))
         self._names = self._net.getUnconnectedOutLayersNames()
 
-    def run(self, rgb01: np.ndarray) -> Tuple[np.ndarray, float]:
+    def run(self, rgb: np.ndarray) -> Tuple[np.ndarray, float]:
+        rgb01 = rgb.astype(np.float32) * (1.0 / 255.0)
         self._net.setInput(np.ascontiguousarray(rgb01.transpose(2, 0, 1)[None]))
         outs = self._net.forward(self._names)
         lm = next(o for o in outs if o.size == 1434)
@@ -162,7 +163,24 @@ class _OpenCV:
         return lm.reshape(-1, 3).astype(np.float64), float(score.ravel()[0])
 
 
-def make_runner(model: bytes, backend: str = "auto"):
+class _Npu:
+    name = "npu"
+
+    def __init__(self, rknn_path: Path, core: str = "auto"):
+        from ..npu import RknnModel
+
+        self._model = RknnModel(rknn_path, core)
+
+    def run(self, rgb: np.ndarray) -> Tuple[np.ndarray, float]:
+        outs = self._model.run([rgb])  # нормализация 0..255 → 0..1 встроена в модель
+        lm = next(o for o in outs if o.size == 1434)
+        score = next(o for o in outs if o.size == 1 and o is not lm)
+        return lm.reshape(-1, 3).astype(np.float64), float(score.ravel()[0])
+
+
+def make_runner(model: bytes, backend: str = "auto", rknn_path=None, core: str = "auto"):
+    if backend == "npu":
+        return _Npu(rknn_path, core)
     if backend in ("auto", "litert"):
         try:
             return _LiteRT(model)
@@ -176,10 +194,10 @@ def make_runner(model: bytes, backend: str = "auto"):
 class FaceLandmarks:
     """Точки лица + поворот головы для лица, найденного YuNet."""
 
-    def __init__(self, task_path: Path, backend: str = "auto"):
+    def __init__(self, task_path: Path, backend: str = "auto", rknn_path=None, core: str = "auto"):
         model, geometry = read_task(Path(task_path))
         self._mesh, self._basis_ids, self._basis_w = parse_geometry(geometry)
-        self._runner = make_runner(model, backend)
+        self._runner = make_runner(model, backend, rknn_path, core)
         self.backend = self._runner.name
 
     def detect(self, frame: np.ndarray, row: np.ndarray):
@@ -187,8 +205,7 @@ class FaceLandmarks:
         m, roll = crop_transform(row)
         crop = cv2.warpAffine(frame, m, (INPUT, INPUT), flags=cv2.INTER_LINEAR,
                               borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-        rgb01 = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) * (1.0 / 255.0)
-        pts, logit = self._runner.run(rgb01)
+        pts, logit = self._runner.run(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
         if 1.0 / (1.0 + math.exp(-logit)) < PRESENCE_MIN:
             return None
         # в правую систему координат эталонной модели: X вправо, Y вверх, Z к наблюдателю

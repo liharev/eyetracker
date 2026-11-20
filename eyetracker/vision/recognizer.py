@@ -18,6 +18,37 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
+# Эталонное положение 5 точек лица на выровненном изображении 112×112 (как в OpenCV SFace)
+ALIGN_DST = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366],
+                      [41.5493, 92.3655], [70.7299, 92.2041]], np.float64)
+
+
+def similarity_transform(src: np.ndarray, dst: np.ndarray = ALIGN_DST) -> np.ndarray:
+    """Преобразование подобия (метод Умеямы), переводящее точки src в dst; матрица 2×3."""
+    src = np.asarray(src, np.float64)
+    n = src.shape[0]
+    mu_s, mu_d = src.mean(0), dst.mean(0)
+    sc, dc = src - mu_s, dst - mu_d
+    cov = dc.T @ sc / n
+    u, d, vt = np.linalg.svd(cov)
+    s = np.ones(2)
+    if np.linalg.det(cov) < 0:
+        s[-1] = -1
+    r = u @ np.diag(s) @ vt
+    var = (sc ** 2).sum() / n
+    scale = (d * s).sum() / var if var > 0 else 1.0
+    m = np.zeros((2, 3))
+    m[:, :2] = scale * r
+    m[:, 2] = mu_d - scale * r @ mu_s
+    return m
+
+
+def align_face(frame: np.ndarray, face_row: np.ndarray) -> np.ndarray:
+    """Выровненное лицо 112×112 по 5 точкам YuNet (аналог FaceRecognizerSF.alignCrop)."""
+    m = similarity_transform(np.asarray(face_row[4:14], np.float64).reshape(5, 2))
+    return cv2.warpAffine(frame, m, (112, 112), flags=cv2.INTER_LINEAR)
+
+
 class FaceEmbedder:
     def __init__(self, model_path: Path):
         self._net = cv2.FaceRecognizerSF.create(str(model_path), "")
@@ -28,6 +59,24 @@ class FaceEmbedder:
     def embed(self, frame: np.ndarray, face_row: np.ndarray) -> np.ndarray:
         aligned = self.align(frame, face_row)
         feat = self._net.feature(aligned).reshape(-1).astype(np.float32)
+        norm = float(np.linalg.norm(feat))
+        return feat / norm if norm > 0 else feat
+
+
+class NpuFaceEmbedder:
+    """SFace на NPU RK3588; выравнивание лица — на CPU (align_face), без загрузки ONNX-модели."""
+
+    def __init__(self, model_path: Path, core: str = "auto"):
+        from ..npu import RknnModel
+
+        self._model = RknnModel(model_path, core)
+
+    def align(self, frame: np.ndarray, face_row: np.ndarray) -> np.ndarray:
+        return align_face(frame, face_row)
+
+    def embed(self, frame: np.ndarray, face_row: np.ndarray) -> np.ndarray:
+        rgb = cv2.cvtColor(align_face(frame, face_row), cv2.COLOR_BGR2RGB)
+        feat = self._model.run([rgb])[0].reshape(-1).astype(np.float32)
         norm = float(np.linalg.norm(feat))
         return feat / norm if norm > 0 else feat
 

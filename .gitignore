@@ -5,7 +5,8 @@ __pycache__/
 .venv/
 build/
 dist/
-models/
+models/*
+!models/rknn/
 *.onnx
 *.task
 tests/data/

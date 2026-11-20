@@ -110,7 +110,7 @@ class GazeEstimator:
     """precise=True — модель точек лица (LiteRT или OpenCV DNN); иначе — поворот головы по YuNet."""
 
     def __init__(self, landmarker_model: Optional[Path], precise: bool = True, eye_gain: float = 2.5,
-                 backend: str = "auto"):
+                 backend: str = "auto", rknn_path: Optional[Path] = None, core: str = "auto"):
         self.eye_gain = eye_gain
         self._landmarks = None
         self.method = "head"
@@ -118,7 +118,13 @@ class GazeEstimator:
             try:
                 from .landmarks import FaceLandmarks
 
-                self._landmarks = FaceLandmarks(landmarker_model, backend)
+                try:
+                    self._landmarks = FaceLandmarks(landmarker_model, backend, rknn_path, core)
+                except Exception as exc:  # noqa: BLE001
+                    if backend != "npu":
+                        raise
+                    log.warning("Модель точек лица на NPU не запустилась (%s) — используется CPU", exc)
+                    self._landmarks = FaceLandmarks(landmarker_model, "auto")
                 self.method = f"радужка/{self._landmarks.backend}"
                 log.info("Оценка взгляда: модель точек лица (%s, 1 поток), радужка + поворот головы",
                          self._landmarks.backend)

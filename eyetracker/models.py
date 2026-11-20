@@ -71,6 +71,15 @@ def find(key: str) -> Optional[Path]:
     return None
 
 
+def find_rknn(filename: str) -> Optional[Path]:
+    """Модель для NPU (.rknn): models/rknn/ в каталоге данных или в исходниках."""
+    for d in search_dirs():
+        candidate = d / "rknn" / filename
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:

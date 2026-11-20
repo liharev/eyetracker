@@ -54,6 +54,8 @@ class ProcessingConfig:
     min_face_size: int = 48            # px; лица меньше — только «присутствие»
     recognition_threshold: float = 0.40  # косинусная близость SFace
     recognize_interval_s: float = 2.0  # повторное распознавание известных треков
+    accelerator: str = "auto"          # auto | npu | cpu — где выполнять нейросети (NPU RK3588)
+    npu_core: str = "auto"             # auto | 0 | 1 | 2 — ядро NPU
     precise_gaze: bool = True          # точная оценка взгляда (радужка); False — только поворот головы
     gaze_backend: str = "auto"         # auto | litert | opencv — чем выполнять модель точек лица
     full_scan_interval_s: float = 1.0  # полный просмотр кадра; между ними — поиск возле известных лиц
@@ -221,6 +223,10 @@ class Config:
         self.processing.nice = min(19, max(0, int(self.processing.nice)))
         self.processing.gaze_fps = min(30.0, max(0.5, float(self.processing.gaze_fps)))
         self.processing.full_scan_interval_s = min(10.0, max(0.0, float(self.processing.full_scan_interval_s)))
+        if self.processing.accelerator not in ("auto", "npu", "cpu"):
+            self.processing.accelerator = "auto"
+        if str(self.processing.npu_core) not in ("auto", "0", "1", "2"):
+            self.processing.npu_core = "auto"
         if self.processing.gaze_backend not in ("auto", "litert", "opencv"):
             self.processing.gaze_backend = "auto"
         self.camera.rotate = int(self.camera.rotate) if int(self.camera.rotate) in (0, 90, 180, 270) else 0

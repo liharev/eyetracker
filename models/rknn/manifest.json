@@ -1,0 +1,30 @@
+{
+  "toolkit": "2.5.0",
+  "target": "rk3588",
+  "models": {
+    "yunet_320x256.rknn": {
+      "sha256": "f22905a6410afe460265201d47a224abdc7a4ec575ace7937b62f77c7d76f35c",
+      "source": "face_detection_yunet_2023mar.onnx",
+      "note": "YuNet, полный кадр (BGR, 0..255)",
+      "check": "расхождение 0.03% ширины лица; расхождение 0.06% ширины лица"
+    },
+    "yunet_128x128.rknn": {
+      "sha256": "7a3ac96d856a9eee2e283a122c2bd6bc822055ddd9fa5e50cb3eb4f0714c048a",
+      "source": "face_detection_yunet_2023mar.onnx",
+      "note": "YuNet, окрестность лица (BGR, 0..255)",
+      "check": "расхождение 0.06% ширины лица; расхождение 0.07% ширины лица"
+    },
+    "sface_112.rknn": {
+      "sha256": "d388c87a84260bb662f9deef81758a399da3001727f9e73c8b1d325c7f81921e",
+      "source": "face_recognition_sface_2021dec.onnx",
+      "note": "SFace, выровненное лицо 112×112 (RGB, 0..255)",
+      "check": "сходство с CPU 1.0000; сходство с CPU 1.0000"
+    },
+    "face_landmarks_256.rknn": {
+      "sha256": "16ba5edcccc32412ba0504c902ea2240af35120cb9b858b7ad09fc3b7ddbcca2",
+      "source": "face_landmarker.task",
+      "note": "478 точек лица, вырезка 256×256 (RGB, 0..255 → 0..1)",
+      "check": "макс. расхождение точек 0.08 px из 256; макс. расхождение точек 0.10 px из 256"
+    }
+  }
+}

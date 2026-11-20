@@ -110,10 +110,9 @@ class FaceDetector:
             if any(pad):
                 crop = cv2.copyMakeBorder(crop, *pad, cv2.BORDER_CONSTANT, value=0)
             roi = cv2.resize(crop, (n, n), interpolation=cv2.INTER_AREA if s > n else cv2.INTER_LINEAR)
-            _, faces = self._roi_net.detect(roi)
-            if faces is None:
+            faces = self._detect_roi_image(roi)
+            if faces.shape[0] == 0:
                 continue
-            faces = faces.astype(np.float32)
             k = s / float(n)
             faces[:, :14] *= k
             faces[:, _XS] += x0      # ширину и высоту (индексы 2, 3) не сдвигаем
@@ -122,6 +121,52 @@ class FaceDetector:
         if not found:
             return np.zeros((0, 15), dtype=np.float32)
         return _clip(dedupe(np.vstack(found)), w, h)
+
+
+    def _detect_roi_image(self, roi: np.ndarray) -> np.ndarray:
+        _, faces = self._roi_net.detect(roi)
+        return np.zeros((0, 15), np.float32) if faces is None else faces.astype(np.float32)
+
+
+class NpuFaceDetector(FaceDetector):
+    """YuNet на NPU RK3588: модели фиксированного размера 320×256 (кадр) и 128×128 (окрестность)."""
+
+    FULL = (320, 256)
+
+    def __init__(self, full_model: Path, roi_model: Path, score_threshold: float = 0.75,
+                 nms_threshold: float = 0.3, core: str = "auto"):
+        from ..npu import RknnModel
+
+        self.score_threshold = score_threshold
+        self.nms_threshold = nms_threshold
+        self.detect_width = self.FULL[0]
+        self.roi_size = ROI_SIZE
+        self._full = RknnModel(full_model, core)
+        self._roi = RknnModel(roi_model, core)
+
+    def set_threshold(self, value: float) -> None:
+        self.score_threshold = float(value)
+
+    def _run(self, model, img: np.ndarray, w: int, h: int) -> np.ndarray:
+        from .yunet_decode import OUTPUT_NAMES, decode
+
+        outs = model.run([img])
+        names = model.output_names
+        named = dict(zip(names, outs)) if set(OUTPUT_NAMES) <= set(names) else dict(zip(OUTPUT_NAMES, outs))
+        return decode(named, w, h, self.score_threshold, self.nms_threshold)
+
+    def detect(self, frame: np.ndarray) -> np.ndarray:
+        from .yunet_decode import letterbox
+
+        h, w = frame.shape[:2]
+        img, k = letterbox(frame, *self.FULL)
+        faces = self._run(self._full, img, *self.FULL)
+        if faces.shape[0]:
+            faces[:, :14] *= k
+        return _clip(faces, w, h)
+
+    def _detect_roi_image(self, roi: np.ndarray) -> np.ndarray:
+        return self._run(self._roi, roi, self.roi_size, self.roi_size)
 
 
 def face_size(row: np.ndarray) -> float:

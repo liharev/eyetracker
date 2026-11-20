@@ -150,6 +150,7 @@ cd ~/eyetracker && ./install.sh
 | Системные пакеты | `python3-venv`, `python3-pyqt5` (интерфейс), `pulseaudio-utils`/`alsa-utils` (звук), `v4l-utils`, `libxcb-cursor0` |
 | Виртуальное окружение | `~/.local/share/eyetracker/venv` — изолированное, системный Python не затрагивается |
 | OpenCV | `opencv-python-headless` (детекция и распознавание лиц) |
+| NPU RK3588 | только на aarch64: библиотека `librknnrt.so` 2.5.0 (с проверкой SHA-256) в `~/.local/share/eyetracker/lib` и модели `.rknn` в `~/.local/share/eyetracker/models/rknn`; пользователь добавляется в группу `render` (доступ к NPU) |
 | LiteRT | быстрое выполнение модели точек лица (оценка взгляда по радужке), ~9 МБ. Если для платформы нет сборки — установка продолжится, модель будет выполняться через OpenCV (немного больше нагрузка). Оставшийся от версии 1.0 MediaPipe удаляется |
 | Программа | установка EyeTracker в окружение |
 | Модели | YuNet, SFace, FaceLandmarker (~41 МБ) в `~/.local/share/eyetracker/models`, с проверкой SHA-256 |
@@ -162,6 +163,7 @@ cd ~/eyetracker && ./install.sh
 | Параметр | Назначение |
 |----------|-----------|
 | `WITH_LITERT=0 ./install.sh` | без LiteRT: модель точек лица выполняется через OpenCV DNN |
+| `WITH_NPU=0 ./install.sh` | без поддержки NPU — всё на CPU |
 | `APP_HOME=/путь ./install.sh` | другой каталог установки (по умолчанию `~/.local/share/eyetracker`) |
 
 **Проверьте итоговый вывод** (`--check`). Пример для правильно настроенной платы:
@@ -169,6 +171,7 @@ cd ~/eyetracker && ./install.sh
 ```
 OpenCV 4.x/5.x: YuNet=да
 LiteRT 1.x: модель точек лица выполняется через LiteRT   ← или «нет» — тогда через OpenCV
+NPU RK3588: готов; модели .rknn: 4 из 4 — нейросети будут выполняться на NPU
 Qt: pyqt5
 Модель yunet: /home/radxa/.local/share/eyetracker/models/...
 Модель sface: ...
@@ -429,6 +432,22 @@ gst-launch-1.0 v4l2src device=/dev/video11 ! video/x-raw,format=NV12,width=640,h
 ### Рамка не видна поверх полноэкранных окон
 
 Перейдите на сеанс X11 (см. [п.2.3](#2-подготовка-системы)).
+
+### NPU не используется («нейросети: CPU» на вкладке «Камера»)
+
+Проверьте `~/.local/bin/eyetracker --check` — строка «NPU RK3588» объясняет причину:
+
+* «не найдена librknnrt.so» — повторите `./install.sh` (нужен доступ к raw.githubusercontent.com);
+* «устройство NPU не найдено» — в ядре нет драйвера `rknpu`
+  (проверка: `sudo cat /sys/kernel/debug/rknpu/version`);
+* ошибка `rknn_init` / нет доступа к устройству — выйдите из системы и войдите снова (после
+  установки пользователь добавляется в группу `render`).
+
+Подробная проверка с замерами:
+
+```bash
+~/.local/share/eyetracker/venv/bin/python ~/eyetracker/scripts/npu_check.py
+```
 
 ### Не устанавливается LiteRT
 

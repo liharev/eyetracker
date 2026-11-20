@@ -9,7 +9,7 @@ pkill -f "python.* -m eyetracker" 2>/dev/null && echo "Запущенный эк
 rm -f "$HOME/.local/bin/eyetracker" \
       "$HOME/.local/share/applications/eyetracker-settings.desktop" \
       "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/eyetracker.desktop"
-rm -rf "$APP_HOME/venv" "$APP_HOME/models"
+rm -rf "$APP_HOME/venv" "$APP_HOME/models" "$APP_HOME/lib"
 if [ "${1:-}" = "--purge" ]; then
     rm -rf "$APP_HOME" "${XDG_CONFIG_HOME:-$HOME/.config}/eyetracker"
     echo "Удалено полностью (включая настройки, базу лиц и журнал)."

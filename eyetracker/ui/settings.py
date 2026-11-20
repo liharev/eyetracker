@@ -92,7 +92,16 @@ class SettingsDialog(QtWidgets.QDialog):
         self.nice = ispin(0, 19)
         self.use_mp = QtWidgets.QCheckBox("Точная оценка взгляда по радужке (модель точек лица)")
         self.full_scan = dspin(0.2, 10, 0.1, 1, " с")
+        self.accel = QtWidgets.QComboBox()
+        for key, title in (("auto", "Автоматически (NPU, если доступен)"), ("npu", "NPU RK3588"),
+                           ("cpu", "Только процессор (CPU)")):
+            self.accel.addItem(title, key)
+        self.npu_core = QtWidgets.QComboBox()
+        for key, title in (("auto", "Автоматически"), ("0", "Ядро 0"), ("1", "Ядро 1"), ("2", "Ядро 2")):
+            self.npu_core.addItem(title, key)
         self.gaze_fps = dspin(0.5, 30, 0.5, 1, " раз/с")
+        f.addRow("Нейросети выполнять на:", self.accel)
+        f.addRow("Ядро NPU:", self.npu_core)
         f.addRow("Частота анализа (есть люди):", self.fps)
         f.addRow("Частота анализа (никого нет):", self.idle_fps)
         f.addRow("Ширина кадра для детектора:", self.detect_width)
@@ -101,6 +110,8 @@ class SettingsDialog(QtWidgets.QDialog):
         f.addRow("Полный просмотр кадра каждые:", self.full_scan)
         f.addRow("Оценка взгляда (без предупреждения):", self.gaze_fps)
         f.addRow(self.use_mp)
+        f.addRow(hint("NPU — нейропроцессор RK3588: поиск, распознавание лиц и оценка взгляда выполняются "
+                      "на нём, а не на процессоре. Если NPU недоступен, программа сама работает на CPU."))
         f.addRow(hint("«auto» — только энергоэффективные ядра (на RK3588: A55, cpu0-3), производительные "
                       "ядра A76 остаются другим программам. Пусто — без ограничения. Ядра и приоритет "
                       "применяются после перезапуска программы. Между полными просмотрами кадра лицо ищется только возле "
@@ -460,6 +471,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.nice.setValue(p.nice)
         self.use_mp.setChecked(p.precise_gaze)
         self.full_scan.setValue(p.full_scan_interval_s)
+        self.accel.setCurrentIndex(max(0, self.accel.findData(p.accelerator)))
+        self.npu_core.setCurrentIndex(max(0, self.npu_core.findData(str(p.npu_core))))
         self.gaze_fps.setValue(p.gaze_fps)
         self.rec_thr.setValue(p.recognition_threshold)
         self.det_thr.setValue(p.detect_threshold)
@@ -543,6 +556,8 @@ class SettingsDialog(QtWidgets.QDialog):
         p.nice = self.nice.value()
         p.precise_gaze = self.use_mp.isChecked()
         p.full_scan_interval_s = self.full_scan.value()
+        p.accelerator = self.accel.currentData()
+        p.npu_core = self.npu_core.currentData()
         p.gaze_fps = self.gaze_fps.value()
         p.recognition_threshold = self.rec_thr.value()
         p.detect_threshold = self.det_thr.value()
@@ -653,8 +668,8 @@ class SettingsDialog(QtWidgets.QDialog):
         tab = self.tabs.tabText(self.tabs.currentIndex())
         if tab == "Камера":
             self.preview.show_frame(eng.get_preview())
-            self.preview_info.setText(f"Обработка: {st.fps:.1f} кадр/с · лиц: {st.faces} · "
-                                      f"оценка взгляда: {st.gaze_method or '—'}")
+            self.preview_info.setText(f"Обработка: {st.fps:.1f} кадр/с · нейросети: {st.accelerator or '—'} · "
+                                      f"лиц: {st.faces} · оценка взгляда: {st.gaze_method or '—'}")
         if tab == "Взгляд":
             lg = eng.latest_gaze()
             if lg is not None:

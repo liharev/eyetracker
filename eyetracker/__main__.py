@@ -76,6 +76,13 @@ def cmd_check() -> int:
         print("Qt: НЕ УСТАНОВЛЕН (нужен python3-pyqt5 или PySide6)")
     for key in models.MODELS:
         print(f"Модель {key}: {models.find(key) or 'нет (python3 -m eyetracker --download-models)'}")
+    from . import npu
+
+    ok, why = npu.availability()
+    rknn = [n for n in ("yunet_320x256.rknn", "yunet_128x128.rknn", "sface_112.rknn", "face_landmarks_256.rknn")
+            if models.find_rknn(n)]
+    print(f"NPU RK3588: {why}; модели .rknn: {len(rknn)} из 4"
+          + (" — нейросети будут выполняться на NPU" if ok and len(rknn) == 4 else ""))
     print("Камеры:", ", ".join(sorted(glob.glob("/dev/video*"))) or "не найдены")
     print("Команды блокировки:", "; ".join(" ".join(c) for c in candidate_commands()) or "не найдены")
     print("Состояние блокировки определяется:", "да" if ScreenLocker().is_locked() is not None else "нет")

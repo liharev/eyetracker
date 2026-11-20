@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Замер нагрузки движка на CPU/память без камеры (подставляется тестовое фото).
 
-    python3 scripts/benchmark.py [empty|person|gaze] [секунды] [auto|litert|opencv]
+    python3 scripts/benchmark.py [empty|person|gaze] [секунды] [--accelerator auto|npu|cpu]
+                                 [--gaze-backend auto|litert|opencv]
 
 Нужны модели (python3 -m eyetracker --download-models) и тестовые фото (scripts/fetch_test_data.sh).
 """
@@ -13,7 +14,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "tests"))
 
 from eyetracker.resources import apply_limits, limit_threads_env  # noqa: E402
 
@@ -25,7 +25,7 @@ from eyetracker.config import Config  # noqa: E402
 from eyetracker.engine import Engine  # noqa: E402
 from eyetracker.events import EventDispatcher, EventStore  # noqa: E402
 from eyetracker.vision.recognizer import FaceDatabase  # noqa: E402
-from test_engine_integration import FakeCamera, FakeLocker, canvas  # noqa: E402
+from eyetracker.devtools import FakeCamera, FakeLocker, canvas, test_images  # noqa: E402
 
 
 class Cam(FakeCamera):
@@ -36,14 +36,21 @@ class Cam(FakeCamera):
 
 
 def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else "person"
-    seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 20
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("mode", nargs="?", default="person", choices=["empty", "person", "gaze"])
+    ap.add_argument("seconds", nargs="?", type=float, default=20)
+    ap.add_argument("--accelerator", default="auto", choices=["auto", "npu", "cpu"])
+    ap.add_argument("--gaze-backend", default="auto", choices=["auto", "litert", "opencv"])
+    a = ap.parse_args()
+    mode, seconds = a.mode, a.seconds
     apply_limits("", 10)
-    face = canvas(cv2.imread(str(ROOT / "tests" / "data" / "lena.jpg")))
+    face = canvas(cv2.imread(str(test_images(ROOT / "tests" / "data")[0])))
     cfg = Config()
     cfg.gaze.enabled = mode == "gaze"
-    if len(sys.argv) > 3:
-        cfg.processing.gaze_backend = sys.argv[3]
+    cfg.processing.gaze_backend = a.gaze_backend
+    cfg.processing.accelerator = a.accelerator
     tmp = tempfile.mkdtemp()
     db = FaceDatabase(Path(tmp) / "faces")
     cams = []
@@ -61,7 +68,7 @@ def main():
     cpu = (time.process_time() - c0) / (time.monotonic() - t0) * 100
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     print(f"{mode}: CPU {cpu:.1f}% одного ядра, анализ {eng.status.fps:.1f} кадр/с, "
-          f"пик памяти {rss:.0f} МБ, взгляд: {eng.status.gaze_method or '—'}")
+          f"пик памяти {rss:.0f} МБ, нейросети: {eng.status.accelerator}, взгляд: {eng.status.gaze_method or '—'}")
     eng.stop()
 
 
