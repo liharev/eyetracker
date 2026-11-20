@@ -10,12 +10,13 @@ from .. import mailer as mailer_mod
 from .. import sound as sound_mod
 from ..config import EVENT_CATEGORIES, Config, category_title
 from ..events import events_to_csv
-from ..i18n import app_name, tr
+from ..i18n import N_, app_name, tr
 from ..policy import stage_text
 from ..qt import Qt, QtCore, QtGui, QtWidgets, Signal
 from .calibration import CalibrationWindow
 from .diagnostics import DiagnosticsTab
 from .enroll import EnrollDialog
+from .help import HelpTab, apply_tooltips
 from .login import SetCredentialsDialog, run_dialog
 from .widgets import FrameView, dspin, hint, ispin
 
@@ -61,12 +62,20 @@ class SettingsDialog(QtWidgets.QDialog):
         self.w_journal = self._tab_journal()
         self.diag = DiagnosticsTab(app)
         self.w_diag = _scroll(self.diag)
-        for widget, title in ((self.w_general, tr("Общие")), (self.w_camera, tr("Камера")),
-                              (self._tab_faces(), tr("База лиц")), (self.w_lock, tr("Блокировка")),
-                              (self.w_gaze, tr("Взгляд")), (self.w_notify, tr("Уведомления")),
-                              (self.w_journal, tr("Журнал")), (self.w_diag, tr("Диагностика")),
-                              (_scroll(self._tab_account()), tr("Учётная запись"))):
-            self.tabs.addTab(widget, title)
+        self.help = HelpTab()
+        # вкладка → раздел справки (ключ — исходное русское название вкладки)
+        self._help_keys = {}
+        for widget, key in ((self.w_general, N_("Общие")), (self.w_camera, N_("Камера")),
+                            (self._tab_faces(), N_("База лиц")), (self.w_lock, N_("Блокировка")),
+                            (self.w_gaze, N_("Взгляд")), (self.w_notify, N_("Уведомления")),
+                            (self.w_journal, N_("Журнал")), (self.w_diag, N_("Диагностика")),
+                            (_scroll(self._tab_account()), N_("Учётная запись")), (self.help, N_("Помощь"))):
+            self.tabs.addTab(widget, tr(key))
+            self._help_keys[widget] = key
+        apply_tooltips(self)
+        f1 = QtWidgets.QShortcut(QtGui.QKeySequence(Qt.Key.Key_F1), self) if hasattr(QtWidgets, "QShortcut") \
+            else QtGui.QShortcut(QtGui.QKeySequence(Qt.Key.Key_F1), self)
+        f1.activated.connect(self.show_help)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok
                                              | QtWidgets.QDialogButtonBox.StandardButton.Apply
@@ -709,6 +718,13 @@ class SettingsDialog(QtWidgets.QDialog):
         super().done(r)
 
     # ============================================================ helpers
+    def show_help(self) -> None:
+        """F1: справка по текущей вкладке."""
+        key = self._help_keys.get(self.tabs.currentWidget())
+        self.tabs.setCurrentWidget(self.help)
+        if key and key != N_("Помощь"):
+            self.help.show_section(key)
+
     def _update_t4(self) -> None:
         on = self.routes["gaze"]["email"].isChecked()
         self.t4.setEnabled(on)

@@ -35,7 +35,7 @@ def test_no_stale_translations():
 def test_placeholders_match():
     for ru, en in EN.items():
         assert fields(ru) == fields(en), (ru, en)
-        assert not CYR.search(en), en
+        assert not CYR.search(en) or ru == en == "Русский", en
 
 
 def test_no_untranslated_ui_text():
@@ -51,7 +51,8 @@ def test_no_untranslated_ui_text():
             if isinstance(node, ast.Call):
                 f = node.func
                 is_log = isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == "log"
-                is_tr = (isinstance(f, ast.Name) and f.id == "tr") or (isinstance(f, ast.Attribute) and f.attr == "tr")
+                is_tr = (isinstance(f, ast.Name) and f.id in ("tr", "N_")) or \
+                    (isinstance(f, ast.Attribute) and f.attr == "tr")
                 if is_log or (is_tr and node.args):
                     for sub in ast.walk(node if is_log else node.args[0]):
                         ok.add(id(sub))
@@ -68,7 +69,8 @@ def test_no_untranslated_ui_text():
                 bad.append(f"{rel}:{node.lineno}: {node.value[:60]!r}")
     # допустимые исключения: название языка, ярлык с обоими языками, разбор «да» в настройках,
     # технические сообщения для журнала разработчика
-    allowed = ("'Русский'", "autostart.py", "config.py", "resources.py", "landmarks.py")
+    allowed = ("'Русский'", "autostart.py", "config.py", "resources.py", "landmarks.py",
+               "help_content.py")   # справка хранит тексты на обоих языках
     bad = [b for b in bad if not any(a in b for a in allowed)]
     assert not bad, "\n".join(bad)
 

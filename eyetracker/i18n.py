@@ -50,5 +50,10 @@ def tr(text: str, /, **values) -> str:
     return s.format(**values) if values else s
 
 
+def N_(text: str) -> str:
+    """Пометка «строка для перевода» без перевода на месте (переводится позже через tr)."""
+    return text
+
+
 def app_name() -> str:
     return tr("CAMAI бдительность")

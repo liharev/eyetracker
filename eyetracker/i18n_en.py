@@ -541,4 +541,19 @@ EN = {
         "Program data (models, faces, journal, snapshots): {mb:.0f} MB; running for {uptime}",
     "в очереди писем: {n}; последняя ошибка: {err}": "e-mails queued: {n}; last error: {err}",
     "макс. {value:.1f}": "max {value:.1f}",
+
+    # --------------------------------------------------------- справка
+    "Помощь": "Help",
+    "Русский": "Русский",          # название языка показывается на нём самом
+    "Поиск по настройкам…": "Search the settings…",
+    "По умолчанию: {value}": "Default: {value}",
+    "включено": "on",
+    "выключено": "off",
+    "не задано": "not set",
+    "Ничего не найдено": "Nothing found",
+    "Выберите раздел или параметр слева либо воспользуйтесь поиском. Подсказка по любому "
+    "параметру появляется и при наведении на него мыши, а клавиша F1 открывает справку по "
+    "текущей вкладке.":
+        "Choose a section or a setting on the left, or use the search. Help for any setting also appears when "
+        "you hover the mouse over it, and the F1 key opens help for the current tab.",
 }
