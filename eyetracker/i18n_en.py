@@ -197,7 +197,7 @@ EN = {
     "открыть настройки (в т.ч. у запущенного экземпляра)": "open the settings (also of a running instance)",
     "загрузить модели нейросетей и выйти": "download the neural network models and exit",
     "проверить окружение и выйти": "check the environment and exit",
-    "установить значки для ярлыков и выйти": "install the desktop icons and exit",
+    "обновить значки и пункт меню и выйти": "update the icons and the menu entry and exit",
     "не загружать модели автоматически": "do not download models automatically",
     "подробный журнал": "verbose log",
 

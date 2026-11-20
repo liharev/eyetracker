@@ -95,17 +95,16 @@ def cmd_check() -> int:
 
 
 def cmd_install_icons() -> int:
-    """Значки для ярлыков (меню приложений, автозапуск) в ~/.local/share/icons."""
-    from pathlib import Path
-
+    """Значки, пункт меню приложений и автозапуск; обновление кэшей меню и значков."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from . import icons
+    from . import autostart
+    from .config import ConfigStore
     from .qt import QtGui
 
-    app = QtGui.QGuiApplication([sys.argv[0]])  # нужен для отрисовки
-    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "icons"
-    for path in icons.install_desktop_icons(base).values():
-        print(path)
+    app = QtGui.QGuiApplication([sys.argv[0]])  # нужен для отрисовки значков
+    autostart.ensure_desktop_integration(ConfigStore().load().general.autostart, wait=True)
+    print(autostart.menu_file())
+    print(autostart.icon_path())
     del app
     return 0
 
@@ -120,7 +119,7 @@ def main(argv=None) -> int:
     parser.add_argument("--settings", action="store_true", help=tr("открыть настройки (в т.ч. у запущенного экземпляра)"))
     parser.add_argument("--download-models", action="store_true", help=tr("загрузить модели нейросетей и выйти"))
     parser.add_argument("--check", action="store_true", help=tr("проверить окружение и выйти"))
-    parser.add_argument("--install-icons", action="store_true", help=tr("установить значки для ярлыков и выйти"))
+    parser.add_argument("--install-icons", action="store_true", help=tr("обновить значки и пункт меню и выйти"))
     parser.add_argument("--no-download", action="store_true", help=tr("не загружать модели автоматически"))
     parser.add_argument("--debug", action="store_true", help=tr("подробный журнал"))
     parser.add_argument("--version", action="version", version=__version__)

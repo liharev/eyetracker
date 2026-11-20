@@ -91,18 +91,8 @@ chmod +x "$HOME/.local/bin/eyetracker"
 
 # пункт меню приложений
 mkdir -p "$HOME/.local/share/applications"
-# значки программы для меню и автозапуска
-"$VENV/bin/python" -m eyetracker --install-icons >/dev/null || echo "!! Не удалось установить значки"
-cat > "$HOME/.local/share/applications/eyetracker-settings.desktop" <<EOS
-[Desktop Entry]
-Type=Application
-Name=CAMAI vigilance — settings
-Name[ru]=CAMAI бдительность — настройки
-Exec=$VENV/bin/python -m eyetracker --settings
-Icon=camai-vigilance
-Terminal=false
-Categories=Utility;Security;
-EOS
+# значки программы, пункт меню приложений и автозапуск (с обновлением кэшей меню KDE/GNOME)
+"$VENV/bin/python" -m eyetracker --install-icons >/dev/null || echo "!! Не удалось обновить значки и пункт меню"
 
 # доступ к камере
 if ! id -nG "$USER" | grep -qw video; then

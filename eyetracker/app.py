@@ -88,10 +88,8 @@ class TrayApp(QtCore.QObject):
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
-        try:
-            autostart.set_enabled(self.cfg.general.autostart)
-        except OSError as exc:
-            log.warning("Автозапуск: %s", exc)
+        # пункт меню, значки и автозапуск — в актуальном состоянии (в т.ч. после обновления программы)
+        autostart.ensure_desktop_integration(self.cfg.general.autostart)
         self.engine.start()
         self.scheduler.start()
         self._daily()
@@ -389,7 +387,7 @@ def run(allow_download: bool = True, open_settings: bool = False) -> int:
     qapp.setQuitOnLastWindowClosed(False)
     qapp.setWindowIcon(icons.app_icon())
     if hasattr(qapp, "setDesktopFileName"):
-        qapp.setDesktopFileName(icons.APP_ICON_ID)
+        qapp.setDesktopFileName(autostart.MENU_FILE[:-len(".desktop")])  # связь окон с пунктом меню
     set_language(qapp, cfg.general.language)
     if send_ipc("settings" if open_settings else "ping"):
         log.info("%s уже запущен", app_name())
